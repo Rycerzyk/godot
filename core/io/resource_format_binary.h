@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2017 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2017 Godot Engine contributors (cf. AUTHORS.md)    */
+/* Copyright (c) 2007-2018 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2018 Godot Engine contributors (cf. AUTHORS.md)    */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -27,12 +27,13 @@
 /* TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE     */
 /* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                */
 /*************************************************************************/
+
 #ifndef RESOURCE_FORMAT_BINARY_H
 #define RESOURCE_FORMAT_BINARY_H
 
-#include "io/resource_loader.h"
-#include "io/resource_saver.h"
-#include "os/file_access.h"
+#include "core/io/resource_loader.h"
+#include "core/io/resource_saver.h"
+#include "core/os/file_access.h"
 
 class ResourceInteractiveLoaderBinary : public ResourceInteractiveLoader {
 
@@ -41,6 +42,7 @@ class ResourceInteractiveLoaderBinary : public ResourceInteractiveLoader {
 	String res_path;
 	String type;
 	Ref<Resource> resource;
+	uint32_t ver_format;
 
 	FileAccess *f;
 
@@ -98,6 +100,7 @@ public:
 };
 
 class ResourceFormatLoaderBinary : public ResourceFormatLoader {
+	GDCLASS(ResourceFormatLoaderBinary, ResourceFormatLoader)
 public:
 	virtual Ref<ResourceInteractiveLoader> load_interactive(const String &p_path, const String &p_original_path = "", Error *r_error = NULL);
 	virtual void get_recognized_extensions_for_type(const String &p_type, List<String> *p_extensions) const;
@@ -117,7 +120,6 @@ class ResourceFormatSaverBinaryInstance {
 	bool skip_editor;
 	bool big_endian;
 	bool takeover_paths;
-	int bin_meta_idx;
 	FileAccess *f;
 	String magic;
 	Set<RES> resource_set;
@@ -139,18 +141,19 @@ class ResourceFormatSaverBinaryInstance {
 		List<Property> properties;
 	};
 
-	void _pad_buffer(int p_bytes);
-	void write_variant(const Variant &p_property, const PropertyInfo &p_hint = PropertyInfo());
+	static void _pad_buffer(FileAccess *f, int p_bytes);
+	void _write_variant(const Variant &p_property, const PropertyInfo &p_hint = PropertyInfo());
 	void _find_resources(const Variant &p_variant, bool p_main = false);
-	void save_unicode_string(const String &p_string);
+	static void save_unicode_string(FileAccess *f, const String &p_string, bool p_bit_on_len = false);
 	int get_string_index(const String &p_string);
 
 public:
 	Error save(const String &p_path, const RES &p_resource, uint32_t p_flags = 0);
+	static void write_variant(FileAccess *f, const Variant &p_property, Set<RES> &resource_set, Map<RES, int> &external_resources, Map<StringName, int> &string_map, const PropertyInfo &p_hint = PropertyInfo());
 };
 
 class ResourceFormatSaverBinary : public ResourceFormatSaver {
-
+	GDCLASS(ResourceFormatSaverBinary, ResourceFormatSaver)
 public:
 	static ResourceFormatSaverBinary *singleton;
 	virtual Error save(const String &p_path, const RES &p_resource, uint32_t p_flags = 0);

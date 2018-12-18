@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2017 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2017 Godot Engine contributors (cf. AUTHORS.md)    */
+/* Copyright (c) 2007-2018 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2018 Godot Engine contributors (cf. AUTHORS.md)    */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -27,6 +27,7 @@
 /* TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE     */
 /* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                */
 /*************************************************************************/
+
 #ifndef OS_UNIX_H
 #define OS_UNIX_H
 
@@ -36,35 +37,26 @@
 
 #ifdef UNIX_ENABLED
 
+#include "core/os/os.h"
 #include "drivers/unix/ip_unix.h"
-#include "os/os.h"
 
 class OS_Unix : public OS {
-
-	uint64_t ticks_start;
 
 protected:
 	// UNIX only handles the core functions.
 	// inheriting platforms under unix (eg. X11) should handle the rest
 
-	//virtual int get_video_driver_count() const;
-	//virtual const char * get_video_driver_name(int p_driver) const;
-
-	virtual int get_audio_driver_count() const;
-	virtual const char *get_audio_driver_name(int p_driver) const;
-
-	virtual void initialize_logger();
 	virtual void initialize_core();
 	virtual int unix_initialize_audio(int p_audio_driver);
-	//virtual void initialize(int p_video_driver,int p_audio_driver);
+	//virtual Error initialize(int p_video_driver,int p_audio_driver);
 
 	virtual void finalize_core();
 
 	String stdin_buf;
 
-	String get_global_settings_path() const;
-
 public:
+	OS_Unix();
+
 	virtual void alert(const String &p_alert, const String &p_title = "ALERT!");
 	virtual String get_stdin_string(bool p_block);
 
@@ -78,7 +70,7 @@ public:
 	//virtual VideoMode get_video_mode() const;
 	//virtual void get_fullscreen_mode_list(List<VideoMode> *p_list) const;
 
-	virtual Error open_dynamic_library(const String p_path, void *&p_library_handle);
+	virtual Error open_dynamic_library(const String p_path, void *&p_library_handle, bool p_also_set_library_path = false);
 	virtual Error close_dynamic_library(void *p_library_handle);
 	virtual Error get_dynamic_library_symbol_handle(void *p_library_handle, const String p_name, void *&p_symbol_handle, bool p_optional = false);
 
@@ -107,12 +99,10 @@ public:
 	virtual int get_processor_count() const;
 
 	virtual void debug_break();
+	virtual void initialize_debugging();
 
-	virtual String get_installed_templates_path() const;
 	virtual String get_executable_path() const;
-	virtual String get_data_dir() const;
-
-	//virtual void run( MainLoop * p_main_loop );
+	virtual String get_user_data_dir() const;
 };
 
 class UnixTerminalLogger : public StdLogger {

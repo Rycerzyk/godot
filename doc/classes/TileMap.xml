@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8" ?>
-<class name="TileMap" inherits="Node2D" category="Core" version="3.0-alpha">
+<class name="TileMap" inherits="Node2D" category="Core" version="3.1">
 	<brief_description>
 		Node for 2D tile-based maps.
 	</brief_description>
@@ -7,6 +7,7 @@
 		Node for 2D tile-based maps. Tilemaps use a [TileSet] which contain a list of tiles (textures plus optional collision, navigation, and/or occluder shapes) which are used to create grid-based maps.
 	</description>
 	<tutorials>
+		<link>https://docs.godotengine.org/en/latest/tutorials/2d/using_tilemaps.html</link>
 	</tutorials>
 	<demos>
 	</demos>
@@ -15,7 +16,14 @@
 			<return type="void">
 			</return>
 			<description>
-				Clear all cells.
+				Clears all cells.
+			</description>
+		</method>
+		<method name="fix_invalid_tiles">
+			<return type="void">
+			</return>
+			<description>
+				Clears cells that do not exist in the tileset.
 			</description>
 		</method>
 		<method name="get_cell" qualifiers="const">
@@ -26,14 +34,7 @@
 			<argument index="1" name="y" type="int">
 			</argument>
 			<description>
-				Return the tile index of the referenced cell.
-			</description>
-		</method>
-		<method name="get_cell_size" qualifiers="const">
-			<return type="Vector2">
-			</return>
-			<description>
-				Return the cell size.
+				Returns the tile index of the given cell.
 			</description>
 		</method>
 		<method name="get_cellv" qualifiers="const">
@@ -42,48 +43,7 @@
 			<argument index="0" name="position" type="Vector2">
 			</argument>
 			<description>
-				Return the tile index of the cell referenced by a Vector2.
-			</description>
-		</method>
-		<method name="get_center_x" qualifiers="const">
-			<return type="bool">
-			</return>
-			<description>
-				Return true if tiles are to be centered in x coordinate (by default this is false and they are drawn from upper left cell corner).
-			</description>
-		</method>
-		<method name="get_center_y" qualifiers="const">
-			<return type="bool">
-			</return>
-			<description>
-				Return true if tiles are to be centered in y coordinate (by default this is false and they are drawn from upper left cell corner).
-			</description>
-		</method>
-		<method name="get_clip_uv" qualifiers="const">
-			<return type="bool">
-			</return>
-			<description>
-			</description>
-		</method>
-		<method name="get_collision_bounce" qualifiers="const">
-			<return type="float">
-			</return>
-			<description>
-				Return the collision bounce parameter.
-			</description>
-		</method>
-		<method name="get_collision_friction" qualifiers="const">
-			<return type="float">
-			</return>
-			<description>
-				Return the collision friction parameter.
-			</description>
-		</method>
-		<method name="get_collision_layer" qualifiers="const">
-			<return type="int">
-			</return>
-			<description>
-				Return the collision layer.
+				Returns the tile index of the cell given by a Vector2.
 			</description>
 		</method>
 		<method name="get_collision_layer_bit" qualifiers="const">
@@ -92,13 +52,7 @@
 			<argument index="0" name="bit" type="int">
 			</argument>
 			<description>
-			</description>
-		</method>
-		<method name="get_collision_mask" qualifiers="const">
-			<return type="int">
-			</return>
-			<description>
-				Return the collision mask.
+				Returns [code]true[/code] if the given collision layer bit is set.
 			</description>
 		</method>
 		<method name="get_collision_mask_bit" qualifiers="const">
@@ -107,68 +61,14 @@
 			<argument index="0" name="bit" type="int">
 			</argument>
 			<description>
-			</description>
-		</method>
-		<method name="get_collision_use_kinematic" qualifiers="const">
-			<return type="bool">
-			</return>
-			<description>
-				Return whether the tilemap handles collisions as a kinematic body.
-			</description>
-		</method>
-		<method name="get_custom_transform" qualifiers="const">
-			<return type="Transform2D">
-			</return>
-			<description>
-				Return the custom transform matrix.
-			</description>
-		</method>
-		<method name="get_half_offset" qualifiers="const">
-			<return type="int" enum="TileMap.HalfOffset">
-			</return>
-			<description>
-				Return the current half offset configuration.
-			</description>
-		</method>
-		<method name="get_mode" qualifiers="const">
-			<return type="int" enum="TileMap.Mode">
-			</return>
-			<description>
-				Return the orientation mode.
-			</description>
-		</method>
-		<method name="get_occluder_light_mask" qualifiers="const">
-			<return type="int">
-			</return>
-			<description>
-			</description>
-		</method>
-		<method name="get_quadrant_size" qualifiers="const">
-			<return type="int">
-			</return>
-			<description>
-				Return the quadrant size.
-			</description>
-		</method>
-		<method name="get_tile_origin" qualifiers="const">
-			<return type="int" enum="TileMap.TileOrigin">
-			</return>
-			<description>
-				Return the tile origin configuration.
-			</description>
-		</method>
-		<method name="get_tileset" qualifiers="const">
-			<return type="TileSet">
-			</return>
-			<description>
-				Return the current tileset.
+				Returns [code]true[/code] if the given collision mask bit is set.
 			</description>
 		</method>
 		<method name="get_used_cells" qualifiers="const">
 			<return type="Array">
 			</return>
 			<description>
-				Return an array of all cells containing a tile from the tileset (i.e. a tile index different from -1).
+				Returns a [Vector2] array with the positions of all cells containing a tile from the tileset (i.e. a tile index different from [code]-1[/code]).
 			</description>
 		</method>
 		<method name="get_used_cells_by_id" qualifiers="const">
@@ -177,12 +77,14 @@
 			<argument index="0" name="id" type="int">
 			</argument>
 			<description>
+				Returns an array of all cells with the given tile id.
 			</description>
 		</method>
 		<method name="get_used_rect">
 			<return type="Rect2">
 			</return>
 			<description>
+				Returns a rectangle enclosing the used (non-empty) tiles of the map.
 			</description>
 		</method>
 		<method name="is_cell_transposed" qualifiers="const">
@@ -193,7 +95,7 @@
 			<argument index="1" name="y" type="int">
 			</argument>
 			<description>
-				Return whether the referenced cell is transposed, i.e. the X and Y axes are swapped (mirroring with regard to the (1,1) vector).
+				Returns [code]true[/code] if the given cell is transposed, i.e. the x and y axes are swapped.
 			</description>
 		</method>
 		<method name="is_cell_x_flipped" qualifiers="const">
@@ -204,7 +106,7 @@
 			<argument index="1" name="y" type="int">
 			</argument>
 			<description>
-				Return whether the referenced cell is flipped over the X axis.
+				Returns [code]true[/code] if the given cell is flipped in the x axis.
 			</description>
 		</method>
 		<method name="is_cell_y_flipped" qualifiers="const">
@@ -215,14 +117,7 @@
 			<argument index="1" name="y" type="int">
 			</argument>
 			<description>
-				Return whether the referenced cell is flipped over the Y axis.
-			</description>
-		</method>
-		<method name="is_y_sort_mode_enabled" qualifiers="const">
-			<return type="bool">
-			</return>
-			<description>
-				Return the Y sort mode.
+				Returns [code]true[/code] if the given cell is flipped in the y axis.
 			</description>
 		</method>
 		<method name="map_to_world" qualifiers="const">
@@ -233,8 +128,8 @@
 			<argument index="1" name="ignore_half_ofs" type="bool" default="false">
 			</argument>
 			<description>
-				Return the absolute world position corresponding to the tilemap (grid-based) coordinates given as an argument.
-				Optionally, the tilemap's potential half offset can be ignored.
+				Returns the global position corresponding to the given tilemap (grid-based) coordinates.
+				Optionally, the tilemap's half offset can be ignored.
 			</description>
 		</method>
 		<method name="set_cell">
@@ -252,19 +147,14 @@
 			</argument>
 			<argument index="5" name="transpose" type="bool" default="false">
 			</argument>
-			<description>
-				Set the tile index for the cell referenced by its grid-based X and Y coordinates.
-				A tile index of -1 clears the cell.
-				Optionally, the tile can also be flipped over the X and Y coordinates or transposed.
-			</description>
-		</method>
-		<method name="set_cell_size">
-			<return type="void">
-			</return>
-			<argument index="0" name="size" type="Vector2">
+			<argument index="6" name="autotile_coord" type="Vector2" default="Vector2( 0, 0 )">
 			</argument>
 			<description>
-				Set the cell size.
+				Sets the tile index for the cell given by a Vector2.
+				An index of [code]-1[/code] clears the cell.
+				Optionally, the tile can also be flipped, transposed, or given autotile coordinates.
+				Note that data such as navigation polygons and collision shapes are not immediately updated for performance reasons.
+				If you need these to be immediately updated, you can call [method update_dirty_quadrants].
 			</description>
 		</method>
 		<method name="set_cellv">
@@ -281,63 +171,11 @@
 			<argument index="4" name="transpose" type="bool" default="false">
 			</argument>
 			<description>
-				Set the tile index for the cell referenced by a Vector2 of grid-based coordinates.
-				A tile index of -1 clears the cell.
-				Optionally, the tile can also be flipped over the X and Y axes or transposed.
-			</description>
-		</method>
-		<method name="set_center_x">
-			<return type="void">
-			</return>
-			<argument index="0" name="enable" type="bool">
-			</argument>
-			<description>
-				Set tiles to be centered in x coordinate. (by default this is false and they are drawn from upper left cell corner).
-			</description>
-		</method>
-		<method name="set_center_y">
-			<return type="void">
-			</return>
-			<argument index="0" name="enable" type="bool">
-			</argument>
-			<description>
-				Set tiles to be centered in y coordinate. (by default this is false and they are drawn from upper left cell corner).
-			</description>
-		</method>
-		<method name="set_clip_uv">
-			<return type="void">
-			</return>
-			<argument index="0" name="enable" type="bool">
-			</argument>
-			<description>
-			</description>
-		</method>
-		<method name="set_collision_bounce">
-			<return type="void">
-			</return>
-			<argument index="0" name="value" type="float">
-			</argument>
-			<description>
-				Set the collision bounce parameter. Allowable values range from 0 to 1.
-			</description>
-		</method>
-		<method name="set_collision_friction">
-			<return type="void">
-			</return>
-			<argument index="0" name="value" type="float">
-			</argument>
-			<description>
-				Set the collision friction parameter. Allowable values range from 0 to 1.
-			</description>
-		</method>
-		<method name="set_collision_layer">
-			<return type="void">
-			</return>
-			<argument index="0" name="layer" type="int">
-			</argument>
-			<description>
-				Set the collision layer.
-				Layers are referenced by binary indexes, so allowable values to describe the 20 available layers range from 0 to 2^20-1.
+				Sets the tile index for the given cell.
+				An index of [code]-1[/code] clears the cell.
+				Optionally, the tile can also be flipped or transposed.
+				Note that data such as navigation polygons and collision shapes are not immediately updated for performance reasons.
+				If you need these to be immediately updated, you can call [method update_dirty_quadrants].
 			</description>
 		</method>
 		<method name="set_collision_layer_bit">
@@ -348,16 +186,7 @@
 			<argument index="1" name="value" type="bool">
 			</argument>
 			<description>
-			</description>
-		</method>
-		<method name="set_collision_mask">
-			<return type="void">
-			</return>
-			<argument index="0" name="mask" type="int">
-			</argument>
-			<description>
-				Set the collision masks.
-				Masks are referenced by binary indexes, so allowable values to describe the 20 available masks range from 0 to 2^20-1.
+				Sets the given collision layer bit.
 			</description>
 		</method>
 		<method name="set_collision_mask_bit">
@@ -368,89 +197,35 @@
 			<argument index="1" name="value" type="bool">
 			</argument>
 			<description>
+				Sets the given collision mask bit.
 			</description>
 		</method>
-		<method name="set_collision_use_kinematic">
+		<method name="update_bitmask_area">
 			<return type="void">
 			</return>
-			<argument index="0" name="use_kinematic" type="bool">
+			<argument index="0" name="position" type="Vector2">
 			</argument>
 			<description>
-				Set the tilemap to handle collisions as a kinematic body (enabled) or a static body (disabled).
+				Applies autotiling rules to the cell (and its adjacent cells) referenced by its grid-based x and y coordinates.
 			</description>
 		</method>
-		<method name="set_custom_transform">
+		<method name="update_bitmask_region">
 			<return type="void">
 			</return>
-			<argument index="0" name="custom_transform" type="Transform2D">
+			<argument index="0" name="start" type="Vector2" default="Vector2( 0, 0 )">
+			</argument>
+			<argument index="1" name="end" type="Vector2" default="Vector2( 0, 0 )">
 			</argument>
 			<description>
-				Set custom transform matrix, to use in combination with the custom orientation mode.
+				Applies autotiling rules to the cells in the given region (specified by grid-based x and y coordinates).
+				Calling with invalid (or missing) parameters applies autotiling rules for the entire tilemap.
 			</description>
 		</method>
-		<method name="set_half_offset">
+		<method name="update_dirty_quadrants">
 			<return type="void">
 			</return>
-			<argument index="0" name="half_offset" type="int" enum="TileMap.HalfOffset">
-			</argument>
 			<description>
-				Set a half offset on the X coordinate, Y coordinate, or none (use HALF_OFFSET_* constants as argument).
-				Half offset sets every other tile off by a half tile size in the specified direction.
-			</description>
-		</method>
-		<method name="set_mode">
-			<return type="void">
-			</return>
-			<argument index="0" name="mode" type="int" enum="TileMap.Mode">
-			</argument>
-			<description>
-				Set the orientation mode as square, isometric or custom (use MODE_* constants as argument).
-			</description>
-		</method>
-		<method name="set_occluder_light_mask">
-			<return type="void">
-			</return>
-			<argument index="0" name="mask" type="int">
-			</argument>
-			<description>
-			</description>
-		</method>
-		<method name="set_quadrant_size">
-			<return type="void">
-			</return>
-			<argument index="0" name="size" type="int">
-			</argument>
-			<description>
-				Set the quadrant size, this optimizes drawing by batching chunks of map at draw/cull time.
-				Allowed values are integers ranging from 1 to 128.
-			</description>
-		</method>
-		<method name="set_tile_origin">
-			<return type="void">
-			</return>
-			<argument index="0" name="origin" type="int" enum="TileMap.TileOrigin">
-			</argument>
-			<description>
-				Set the tile origin to the tile center or its top-left corner (use TILE_ORIGIN_* constants as argument).
-			</description>
-		</method>
-		<method name="set_tileset">
-			<return type="void">
-			</return>
-			<argument index="0" name="tileset" type="TileSet">
-			</argument>
-			<description>
-				Set the current tileset.
-			</description>
-		</method>
-		<method name="set_y_sort_mode">
-			<return type="void">
-			</return>
-			<argument index="0" name="enable" type="bool">
-			</argument>
-			<description>
-				Set the Y sort mode. Enabled Y sort mode means that children of the tilemap will be drawn in the order defined by their Y coordinate.
-				A tile with a higher Y coordinate will therefore be drawn later, potentially covering up the tile(s) above it if its sprite is higher than its cell size.
+				Updates the tile map's quadrants, allowing things such as navigation and collision shapes to be immediately used if modified.
 			</description>
 		</method>
 		<method name="world_to_map" qualifiers="const">
@@ -459,7 +234,7 @@
 			<argument index="0" name="world_position" type="Vector2">
 			</argument>
 			<description>
-				Return the tilemap (grid-based) coordinates corresponding to the absolute world position given as an argument.
+				Returns the tilemap (grid-based) coordinatescorresponding to the given global position.
 			</description>
 		</method>
 	</methods>
@@ -473,7 +248,7 @@
 			Amount to offset alternating tiles. Uses HALF_OFFSET_* constants. Default value: HALF_OFFSET_DISABLED.
 		</member>
 		<member name="cell_quadrant_size" type="int" setter="set_quadrant_size" getter="get_quadrant_size">
-			The TileMap's quadrant size.  Optimizes drawing by batching, using chunks of this size. Default value: 16.
+			The TileMap's quadrant size. Optimizes drawing by batching, using chunks of this size. Default value: 16.
 		</member>
 		<member name="cell_size" type="Vector2" setter="set_cell_size" getter="get_cell_size">
 			The TileMap's cell size.
@@ -503,10 +278,7 @@
 			The TileMap orientation mode. Uses MODE_* constants. Default value: MODE_SQUARE.
 		</member>
 		<member name="occluder_light_mask" type="int" setter="set_occluder_light_mask" getter="get_occluder_light_mask">
-			The light mask assigned to all light occluders in the TileMap.  The TileSet's light occluders will cast shadows only from Light2D(s) that have the same light mask(s).
-		</member>
-		<member name="tile_data" type="PoolIntArray" setter="_set_tile_data" getter="_get_tile_data">
-			A [PoolIntArray] containing
+			The light mask assigned to all light occluders in the TileMap. The TileSet's light occluders will cast shadows only from Light2D(s) that have the same light mask(s).
 		</member>
 		<member name="tile_set" type="TileSet" setter="set_tileset" getter="get_tileset">
 			The assigned [TileSet].
@@ -520,34 +292,35 @@
 		</signal>
 	</signals>
 	<constants>
-		<constant name="INVALID_CELL" value="-1" enum="">
+		<constant name="INVALID_CELL" value="-1">
 			Returned when a cell doesn't exist.
 		</constant>
-		<constant name="MODE_SQUARE" value="0">
+		<constant name="MODE_SQUARE" value="0" enum="Mode">
 			Orthogonal orientation mode.
 		</constant>
-		<constant name="MODE_ISOMETRIC" value="1">
+		<constant name="MODE_ISOMETRIC" value="1" enum="Mode">
 			Isometric orientation mode.
 		</constant>
-		<constant name="MODE_CUSTOM" value="2">
+		<constant name="MODE_CUSTOM" value="2" enum="Mode">
 			Custom orientation mode.
 		</constant>
-		<constant name="HALF_OFFSET_X" value="0">
+		<constant name="HALF_OFFSET_X" value="0" enum="HalfOffset">
 			Half offset on the X coordinate.
 		</constant>
-		<constant name="HALF_OFFSET_Y" value="1">
+		<constant name="HALF_OFFSET_Y" value="1" enum="HalfOffset">
 			Half offset on the Y coordinate.
 		</constant>
-		<constant name="HALF_OFFSET_DISABLED" value="2">
+		<constant name="HALF_OFFSET_DISABLED" value="2" enum="HalfOffset">
 			Half offset disabled.
 		</constant>
-		<constant name="TILE_ORIGIN_TOP_LEFT" value="0">
+		<constant name="TILE_ORIGIN_TOP_LEFT" value="0" enum="TileOrigin">
 			Tile origin at its top-left corner.
 		</constant>
-		<constant name="TILE_ORIGIN_CENTER" value="1">
+		<constant name="TILE_ORIGIN_CENTER" value="1" enum="TileOrigin">
 			Tile origin at its center.
 		</constant>
-		<constant name="TILE_ORIGIN_BOTTOM_LEFT" value="2">
+		<constant name="TILE_ORIGIN_BOTTOM_LEFT" value="2" enum="TileOrigin">
+			Tile origin at its bottom-left corner.
 		</constant>
 	</constants>
 </class>

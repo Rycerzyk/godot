@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2017 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2017 Godot Engine contributors (cf. AUTHORS.md)    */
+/* Copyright (c) 2007-2018 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2018 Godot Engine contributors (cf. AUTHORS.md)    */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -27,40 +27,54 @@
 /* TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE     */
 /* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                */
 /*************************************************************************/
+
 #include "light_2d.h"
 
-#include "engine.h"
+#include "core/engine.h"
 #include "servers/visual_server.h"
 
-void Light2D::edit_set_pivot(const Point2 &p_pivot) {
-
-	set_texture_offset(p_pivot);
+Dictionary Light2D::_edit_get_state() const {
+	Dictionary state = Node2D::_edit_get_state();
+	state["offset"] = get_texture_offset();
+	return state;
 }
 
-Point2 Light2D::edit_get_pivot() const {
-
-	return get_texture_offset();
+void Light2D::_edit_set_state(const Dictionary &p_state) {
+	Node2D::_edit_set_state(p_state);
+	set_texture_offset(p_state["offset"]);
 }
-bool Light2D::edit_has_pivot() const {
 
+void Light2D::_edit_set_pivot(const Point2 &p_pivot) {
+	set_position(get_transform().xform(p_pivot));
+	set_texture_offset(get_texture_offset() - p_pivot);
+}
+
+Point2 Light2D::_edit_get_pivot() const {
+	return Vector2();
+}
+
+bool Light2D::_edit_use_pivot() const {
 	return true;
 }
 
-Rect2 Light2D::get_item_rect() const {
-
+Rect2 Light2D::_edit_get_rect() const {
 	if (texture.is_null())
-		return Rect2(0, 0, 1, 1);
+		return Rect2();
 
-	Size2i s;
+	Size2 s = texture->get_size() * _scale;
+	return Rect2(texture_offset - s / 2.0, s);
+}
 
-	s = texture->get_size() * _scale;
-	Point2i ofs = texture_offset;
-	ofs -= s / 2;
+bool Light2D::_edit_use_rect() const {
+	return !texture.is_null();
+}
 
-	if (s == Size2(0, 0))
-		s = Size2(1, 1);
+Rect2 Light2D::get_anchorable_rect() const {
+	if (texture.is_null())
+		return Rect2();
 
-	return Rect2(ofs, s);
+	Size2 s = texture->get_size() * _scale;
+	return Rect2(texture_offset - s / 2.0, s);
 }
 
 void Light2D::_update_light_visibility() {
@@ -130,6 +144,7 @@ void Light2D::set_texture_offset(const Vector2 &p_offset) {
 	texture_offset = p_offset;
 	VS::get_singleton()->canvas_light_set_texture_offset(canvas_light, texture_offset);
 	item_rect_changed();
+	_change_notify("offset");
 }
 
 Vector2 Light2D::get_texture_offset() const {
@@ -416,7 +431,7 @@ void Light2D::_bind_methods() {
 
 	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "enabled"), "set_enabled", "is_enabled");
 	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "editor_only"), "set_editor_only", "is_editor_only");
-	ADD_PROPERTY(PropertyInfo(Variant::OBJECT, "texture", PROPERTY_HINT_RESOURCE_TYPE, "Texture"), "set_texture", "get_texture");
+	ADD_PROPERTY(PropertyInfo(Variant::OBJECT, "texture", PROPERTY_HINT_RESOURCE_TYPE, "StreamTexture,ImageTexture"), "set_texture", "get_texture");
 	ADD_PROPERTY(PropertyInfo(Variant::VECTOR2, "offset"), "set_texture_offset", "get_texture_offset");
 	ADD_PROPERTY(PropertyInfo(Variant::REAL, "texture_scale", PROPERTY_HINT_RANGE, "0.01,50,0.01"), "set_texture_scale", "get_texture_scale");
 	ADD_PROPERTY(PropertyInfo(Variant::COLOR, "color"), "set_color", "get_color");

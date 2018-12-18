@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2017 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2017 Godot Engine contributors (cf. AUTHORS.md)    */
+/* Copyright (c) 2007-2018 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2018 Godot Engine contributors (cf. AUTHORS.md)    */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -27,15 +27,16 @@
 /* TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE     */
 /* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                */
 /*************************************************************************/
+
 #include "godotsharp_dirs.h"
 
-#include "os/os.h"
+#include "core/os/dir_access.h"
+#include "core/os/os.h"
+#include "core/project_settings.h"
 
 #ifdef TOOLS_ENABLED
+#include "core/version.h"
 #include "editor/editor_settings.h"
-#include "os/dir_access.h"
-#include "project_settings.h"
-#include "version.h"
 #endif
 
 namespace GodotSharpDirs {
@@ -57,7 +58,7 @@ String _get_expected_build_config() {
 String _get_mono_user_dir() {
 #ifdef TOOLS_ENABLED
 	if (EditorSettings::get_singleton()) {
-		return EditorSettings::get_singleton()->get_settings_path().plus_file("mono");
+		return EditorSettings::get_singleton()->get_data_dir().plus_file("mono");
 	} else {
 		String settings_path;
 
@@ -68,19 +69,13 @@ String _get_mono_user_dir() {
 			// contain yourself
 			settings_path = exe_dir.plus_file("editor_data");
 		} else {
-			if (OS::get_singleton()->has_environment("APPDATA")) {
-				String app_data = OS::get_singleton()->get_environment("APPDATA").replace("\\", "/");
-				settings_path = app_data.plus_file(String(_MKSTR(VERSION_SHORT_NAME)).capitalize());
-			} else if (OS::get_singleton()->has_environment("HOME")) {
-				String home = OS::get_singleton()->get_environment("HOME");
-				settings_path = home.plus_file("." + String(_MKSTR(VERSION_SHORT_NAME)).to_lower());
-			}
+			settings_path = OS::get_singleton()->get_data_path().plus_file(OS::get_singleton()->get_godot_dir_name());
 		}
 
 		return settings_path.plus_file("mono");
 	}
 #else
-	return OS::get_singleton()->get_data_dir().plus_file("mono");
+	return OS::get_singleton()->get_user_data_dir().plus_file("mono");
 #endif
 }
 
@@ -100,9 +95,17 @@ public:
 #ifdef TOOLS_ENABLED
 	String mono_solutions_dir;
 	String build_logs_dir;
+
 	String sln_filepath;
 	String csproj_filepath;
+
+	String data_mono_bin_dir;
+	String data_editor_tools_dir;
+	String data_editor_prebuilt_api_dir;
 #endif
+
+	String data_mono_etc_dir;
+	String data_mono_lib_dir;
 
 private:
 	_GodotSharpDirs() {
@@ -128,10 +131,60 @@ private:
 			name = "UnnamedProject";
 		}
 
-		String base_path = String("res://") + name;
+		String base_path = ProjectSettings::get_singleton()->globalize_path("res://");
 
-		sln_filepath = ProjectSettings::get_singleton()->globalize_path(base_path + ".sln");
-		csproj_filepath = ProjectSettings::get_singleton()->globalize_path(base_path + ".csproj");
+		sln_filepath = base_path.plus_file(name + ".sln");
+		csproj_filepath = base_path.plus_file(name + ".csproj");
+#endif
+
+		String exe_dir = OS::get_singleton()->get_executable_path().get_base_dir();
+
+#ifdef TOOLS_ENABLED
+
+		String data_dir_root = exe_dir.plus_file("GodotSharp");
+		data_editor_tools_dir = data_dir_root.plus_file("Tools");
+		data_editor_prebuilt_api_dir = data_dir_root.plus_file("Api");
+
+		String data_mono_root_dir = data_dir_root.plus_file("Mono");
+		data_mono_bin_dir = data_mono_root_dir.plus_file("bin");
+		data_mono_etc_dir = data_mono_root_dir.plus_file("etc");
+		data_mono_lib_dir = data_mono_root_dir.plus_file("lib");
+
+#ifdef OSX_ENABLED
+		if (!DirAccess::exists(data_editor_tools_dir)) {
+			data_editor_tools_dir = exe_dir.plus_file("../Frameworks/GodotSharp/Tools");
+		}
+
+		if (!DirAccess::exists(data_editor_prebuilt_api_dir)) {
+			data_editor_prebuilt_api_dir = exe_dir.plus_file("../Frameworks/GodotSharp/Api");
+		}
+
+		if (!DirAccess::exists(data_mono_root_dir)) {
+			data_mono_bin_dir = exe_dir.plus_file("../Frameworks/GodotSharp/Mono/bin");
+			data_mono_etc_dir = exe_dir.plus_file("../Resources/GodotSharp/Mono/etc");
+			data_mono_lib_dir = exe_dir.plus_file("../Frameworks/GodotSharp/Mono/lib");
+		}
+#endif
+
+#else
+
+		String appname = OS::get_singleton()->get_safe_dir_name(ProjectSettings::get_singleton()->get("application/config/name"));
+		String data_dir_root = exe_dir.plus_file("data_" + appname);
+		if (!DirAccess::exists(data_dir_root)) {
+			data_dir_root = exe_dir.plus_file("data_Godot");
+		}
+
+		String data_mono_root_dir = data_dir_root.plus_file("Mono");
+		data_mono_etc_dir = data_mono_root_dir.plus_file("etc");
+		data_mono_lib_dir = data_mono_root_dir.plus_file("lib");
+
+#ifdef OSX_ENABLED
+		if (!DirAccess::exists(data_mono_root_dir)) {
+			data_mono_etc_dir = exe_dir.plus_file("../Resources/GodotSharp/Mono/etc");
+			data_mono_lib_dir = exe_dir.plus_file("../Frameworks/GodotSharp/Mono/lib");
+		}
+#endif
+
 #endif
 	}
 
@@ -197,5 +250,26 @@ String get_project_sln_path() {
 String get_project_csproj_path() {
 	return _GodotSharpDirs::get_singleton().csproj_filepath;
 }
-#endif
+
+String get_data_mono_bin_dir() {
+	return _GodotSharpDirs::get_singleton().data_mono_bin_dir;
 }
+
+String get_data_editor_tools_dir() {
+	return _GodotSharpDirs::get_singleton().data_editor_tools_dir;
+}
+
+String get_data_editor_prebuilt_api_dir() {
+	return _GodotSharpDirs::get_singleton().data_editor_prebuilt_api_dir;
+}
+#endif
+
+String get_data_mono_etc_dir() {
+	return _GodotSharpDirs::get_singleton().data_mono_etc_dir;
+}
+
+String get_data_mono_lib_dir() {
+	return _GodotSharpDirs::get_singleton().data_mono_lib_dir;
+}
+
+} // namespace GodotSharpDirs

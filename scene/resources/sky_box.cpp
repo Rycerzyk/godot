@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2017 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2017 Godot Engine contributors (cf. AUTHORS.md)    */
+/* Copyright (c) 2007-2018 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2018 Godot Engine contributors (cf. AUTHORS.md)    */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -27,8 +27,9 @@
 /* TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE     */
 /* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                */
 /*************************************************************************/
+
 #include "sky_box.h"
-#include "io/image_loader.h"
+#include "core/io/image_loader.h"
 
 void Sky::set_radiance_size(RadianceSize p_size) {
 	ERR_FAIL_INDEX(p_size, RADIANCE_SIZE_MAX);
@@ -180,7 +181,7 @@ Ref<Image> ProceduralSky::_generate_sky() {
 
 				normal.normalize();
 
-				float v_angle = Math::acos(normal.y);
+				float v_angle = Math::acos(CLAMP(normal.y, -1.0, 1.0));
 
 				Color color;
 
@@ -189,11 +190,17 @@ Ref<Image> ProceduralSky::_generate_sky() {
 
 					float c = (v_angle - (Math_PI * 0.5)) / (Math_PI * 0.5);
 					color = ground_horizon_linear.linear_interpolate(ground_bottom_linear, Math::ease(c, ground_curve));
+					color.r *= ground_energy;
+					color.g *= ground_energy;
+					color.b *= ground_energy;
 				} else {
 					float c = v_angle / (Math_PI * 0.5);
 					color = sky_horizon_linear.linear_interpolate(sky_top_linear, Math::ease(1.0 - c, sky_curve));
+					color.r *= sky_energy;
+					color.g *= sky_energy;
+					color.b *= sky_energy;
 
-					float sun_angle = Math::rad2deg(Math::acos(sun.dot(normal)));
+					float sun_angle = Math::rad2deg(Math::acos(CLAMP(sun.dot(normal), -1.0, 1.0)));
 
 					if (sun_angle < sun_angle_min) {
 						color = color.blend(sun_color);
@@ -404,7 +411,7 @@ void ProceduralSky::_update_sky() {
 
 	} else {
 		Ref<Image> image = _generate_sky();
-		VS::get_singleton()->texture_allocate(texture, image->get_width(), image->get_height(), Image::FORMAT_RGBE9995, VS::TEXTURE_FLAG_FILTER | VS::TEXTURE_FLAG_REPEAT);
+		VS::get_singleton()->texture_allocate(texture, image->get_width(), image->get_height(), 0, Image::FORMAT_RGBE9995, VS::TEXTURE_TYPE_2D, VS::TEXTURE_FLAG_FILTER | VS::TEXTURE_FLAG_REPEAT);
 		VS::get_singleton()->texture_set_data(texture, image);
 		_radiance_changed();
 	}
@@ -421,7 +428,7 @@ void ProceduralSky::_queue_update() {
 
 void ProceduralSky::_thread_done(const Ref<Image> &p_image) {
 
-	VS::get_singleton()->texture_allocate(texture, p_image->get_width(), p_image->get_height(), Image::FORMAT_RGBE9995, VS::TEXTURE_FLAG_FILTER | VS::TEXTURE_FLAG_REPEAT);
+	VS::get_singleton()->texture_allocate(texture, p_image->get_width(), p_image->get_height(), 0, Image::FORMAT_RGBE9995, VS::TEXTURE_TYPE_2D, VS::TEXTURE_FLAG_FILTER | VS::TEXTURE_FLAG_REPEAT);
 	VS::get_singleton()->texture_set_data(texture, p_image);
 	_radiance_changed();
 	Thread::wait_to_finish(sky_thread);
@@ -531,14 +538,14 @@ ProceduralSky::ProceduralSky() {
 	texture = VS::get_singleton()->texture_create();
 
 	update_queued = false;
-	sky_top_color = Color::hex(0x0c74f9ff);
-	sky_horizon_color = Color::hex(0x8ed2e8ff);
-	sky_curve = 0.25;
+	sky_top_color = Color::hex(0xa5d6f1ff);
+	sky_horizon_color = Color::hex(0xd6eafaff);
+	sky_curve = 0.09;
 	sky_energy = 1;
 
-	ground_bottom_color = Color::hex(0x1a2530ff);
-	ground_horizon_color = Color::hex(0x7bc9f3ff);
-	ground_curve = 0.01;
+	ground_bottom_color = Color::hex(0x282f36ff);
+	ground_horizon_color = Color::hex(0x6c655fff);
+	ground_curve = 0.02;
 	ground_energy = 1;
 
 	sun_color = Color(1, 1, 1);

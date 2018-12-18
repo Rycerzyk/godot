@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2017 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2017 Godot Engine contributors (cf. AUTHORS.md)    */
+/* Copyright (c) 2007-2018 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2018 Godot Engine contributors (cf. AUTHORS.md)    */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -27,6 +27,7 @@
 /* TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE     */
 /* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                */
 /*************************************************************************/
+
 #ifndef CODE_EDITOR_H
 #define CODE_EDITOR_H
 
@@ -35,6 +36,7 @@
 #include "scene/gui/check_button.h"
 #include "scene/gui/dialogs.h"
 #include "scene/gui/line_edit.h"
+#include "scene/gui/link_button.h"
 #include "scene/gui/text_edit.h"
 #include "scene/gui/tool_button.h"
 #include "scene/main/timer.h"
@@ -62,12 +64,12 @@ class FindReplaceBar : public HBoxContainer {
 
 	GDCLASS(FindReplaceBar, HBoxContainer);
 
+	MarginContainer *container;
 	LineEdit *search_text;
 	ToolButton *find_prev;
 	ToolButton *find_next;
 	CheckBox *case_sensitive;
 	CheckBox *whole_words;
-	Label *error_label;
 	TextureButton *hide_button;
 
 	LineEdit *replace_text;
@@ -75,9 +77,10 @@ class FindReplaceBar : public HBoxContainer {
 	Button *replace_all;
 	CheckBox *selection_only;
 
-	VBoxContainer *text_vbc;
-	HBoxContainer *replace_hbc;
-	HBoxContainer *replace_options_hbc;
+	HBoxContainer *hbc;
+	VBoxContainer *vbc_lineedit;
+	HBoxContainer *hbc_button_replace;
+	HBoxContainer *hbc_option_replace;
 
 	TextEdit *text_edit;
 
@@ -97,6 +100,7 @@ class FindReplaceBar : public HBoxContainer {
 	void _search_text_changed(const String &p_text);
 	void _search_text_entered(const String &p_text);
 	void _replace_text_entered(const String &p_text);
+	void _update_size();
 
 protected:
 	void _notification(int p_what);
@@ -130,62 +134,6 @@ public:
 	FindReplaceBar();
 };
 
-class FindReplaceDialog : public ConfirmationDialog {
-
-	GDCLASS(FindReplaceDialog, ConfirmationDialog);
-
-	LineEdit *search_text;
-	LineEdit *replace_text;
-	CheckButton *whole_words;
-	CheckButton *case_sensitive;
-	CheckButton *backwards;
-	CheckButton *prompt;
-	CheckButton *selection_only;
-	Button *skip;
-	Label *error_label;
-	MarginContainer *replace_mc;
-	Label *replace_label;
-	VBoxContainer *replace_vb;
-
-	void _search_text_entered(const String &p_text);
-	void _replace_text_entered(const String &p_text);
-	void _prompt_changed();
-	void _skip_pressed();
-
-	TextEdit *text_edit;
-
-protected:
-	void _search_callback();
-	void _replace_skip_callback();
-
-	bool _search();
-	void _replace();
-
-	virtual void ok_pressed();
-	static void _bind_methods();
-
-public:
-	String get_search_text() const;
-	String get_replace_text() const;
-	bool is_whole_words() const;
-	bool is_case_sensitive() const;
-	bool is_backwards() const;
-	bool is_replace_mode() const;
-	bool is_replace_all_mode() const;
-	bool is_replace_selection_only() const;
-	void set_replace_selection_only(bool p_enable);
-
-	void set_error(const String &p_error);
-
-	void popup_search();
-	void popup_replace();
-
-	void set_text_edit(TextEdit *p_text_edit);
-
-	void search_next();
-	FindReplaceDialog();
-};
-
 typedef void (*CodeTextEditorCodeCompleteFunc)(void *p_ud, const String &p_code, List<String> *r_options, bool &r_forced);
 
 class CodeTextEditor : public VBoxContainer {
@@ -194,9 +142,13 @@ class CodeTextEditor : public VBoxContainer {
 
 	TextEdit *text_editor;
 	FindReplaceBar *find_replace_bar;
+	HBoxContainer *status_bar;
+	Label *warning_label;
+	Label *warning_count_label;
 
 	Label *line_nb;
 	Label *col_nb;
+	Label *font_size_nb;
 	Label *info;
 	Timer *idle;
 	Timer *code_complete_timer;
@@ -204,19 +156,25 @@ class CodeTextEditor : public VBoxContainer {
 
 	Timer *font_resize_timer;
 	int font_resize_val;
+	real_t font_size;
 
-	Label *error;
+	LinkButton *error;
+	int error_line;
+	int error_column;
 
 	void _on_settings_change();
 
 	void _update_font();
 	void _complete_request();
 	void _font_resize_timeout();
+	bool _add_font_size(int p_delta);
 
 	void _text_editor_gui_input(const Ref<InputEvent> &p_event);
 	void _zoom_in();
 	void _zoom_out();
+	void _zoom_changed();
 	void _reset_zoom();
+	void _error_pressed();
 
 	CodeTextEditorCodeCompleteFunc code_complete_func;
 	void *code_complete_ud;
@@ -234,11 +192,37 @@ protected:
 	static void _bind_methods();
 
 public:
+	void trim_trailing_whitespace();
+
+	void convert_indent_to_spaces();
+	void convert_indent_to_tabs();
+
+	enum CaseStyle {
+		UPPER,
+		LOWER,
+		CAPITALIZE,
+	};
+	void convert_case(CaseStyle p_case);
+
+	void move_lines_up();
+	void move_lines_down();
+	void delete_lines();
+	void clone_lines_down();
+
+	void goto_line(int p_line);
+	void goto_line_selection(int p_line, int p_begin, int p_end);
+
+	Variant get_edit_state();
+	void set_edit_state(const Variant &p_state);
+
 	void update_editor_settings();
 	void set_error(const String &p_error);
+	void set_error_pos(int p_line, int p_column);
 	void update_line_and_column() { _line_col_changed(); }
 	TextEdit *get_text_edit() { return text_editor; }
 	FindReplaceBar *get_find_replace_bar() { return find_replace_bar; }
+	Label *get_warning_label() const { return warning_label; }
+	Label *get_warning_count_label() const { return warning_count_label; }
 	virtual void apply_code() {}
 
 	void set_code_complete_func(CodeTextEditorCodeCompleteFunc p_code_complete_func, void *p_ud);

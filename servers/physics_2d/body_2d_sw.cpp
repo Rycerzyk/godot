@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2017 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2017 Godot Engine contributors (cf. AUTHORS.md)    */
+/* Copyright (c) 2007-2018 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2018 Godot Engine contributors (cf. AUTHORS.md)    */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -27,6 +27,7 @@
 /* TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE     */
 /* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                */
 /*************************************************************************/
+
 #include "body_2d_sw.h"
 #include "area_2d_sw.h"
 #include "physics_2d_server_sw.h"
@@ -59,6 +60,10 @@ void Body2DSW::update_inertias() {
 			real_t _inertia = 0;
 
 			for (int i = 0; i < get_shape_count(); i++) {
+
+				if (is_shape_disabled(i)) {
+					continue;
+				}
 
 				const Shape2DSW *shape = get_shape(i);
 
@@ -510,8 +515,7 @@ void Body2DSW::integrate_forces(real_t p_step) {
 
 		if (continuous_cd_mode != Physics2DServer::CCD_MODE_DISABLED) {
 
-			motion = new_transform.get_origin() - get_transform().get_origin();
-			//linear_velocity*p_step;
+			motion = linear_velocity * p_step;
 			do_motion = true;
 		}
 	}
@@ -650,8 +654,11 @@ void Body2DSW::set_force_integration_callback(ObjectID p_id, const StringName &p
 	}
 }
 
-Body2DSW::Body2DSW()
-	: CollisionObject2DSW(TYPE_BODY), active_list(this), inertia_update_list(this), direct_state_query_list(this) {
+Body2DSW::Body2DSW() :
+		CollisionObject2DSW(TYPE_BODY),
+		active_list(this),
+		inertia_update_list(this),
+		direct_state_query_list(this) {
 
 	mode = Physics2DServer::BODY_MODE_RIGID;
 	active = true;

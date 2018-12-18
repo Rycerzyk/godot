@@ -1,3 +1,8 @@
+		// The following is concatenated with generated code, and acts as the end
+		// of a wrapper for said code. See pre.js for the other part of the
+		// wrapper.
+		exposedLibs['PATH'] = PATH;
+		exposedLibs['FS'] = FS;
 		return Module;
 	},
 };
@@ -5,13 +10,20 @@
 (function() {
 	var engine = Engine;
 
-	var USING_WASM = engine.USING_WASM;
 	var DOWNLOAD_ATTEMPTS_MAX = 4;
 
 	var basePath = null;
+	var wasmFilenameExtensionOverride = null;
 	var engineLoadPromise = null;
 
 	var loadingFiles = {};
+
+	function getPathLeaf(path) {
+
+		while (path.endsWith('/'))
+			path = path.slice(0, -1);
+		return path.slice(path.lastIndexOf('/') + 1);
+	}
 
 	function getBasePath(path) {
 
@@ -24,95 +36,119 @@
 
 	function getBaseName(path) {
 
-		path = getBasePath(path);
-		return path.slice(path.lastIndexOf('/') + 1);
+		return getPathLeaf(getBasePath(path));
 	}
 
 	Engine = function Engine() {
 
 		this.rtenv = null;
 
-		var gameInitPromise = null;
-		var unloadAfterInit = true;
-		var memorySize = 268435456;
+		var LIBS = {};
 
+		var initPromise = null;
+		var unloadAfterInit = true;
+
+		var preloadedFiles = [];
+
+		var resizeCanvasOnStart = true;
 		var progressFunc = null;
-		var pckProgressTracker = {};
+		var preloadProgressTracker = {};
 		var lastProgress = { loaded: 0, total: 0 };
 
 		var canvas = null;
+		var executableName = null;
+		var locale = null;
 		var stdout = null;
 		var stderr = null;
 
-		this.initGame = function(mainPack) {
+		this.init = function(newBasePath) {
 
-			if (!gameInitPromise) {
-
-				if (mainPack === undefined) {
-					if (basePath !== null) {
-						mainPack = basePath + '.pck';
-					} else {
-						return Promise.reject(new Error("No main pack to load specified"));
-					}
-				}
-				if (basePath === null)
-					basePath = getBasePath(mainPack);
-
-				gameInitPromise = Engine.initEngine().then(
+			if (!initPromise) {
+				initPromise = Engine.load(newBasePath).then(
 					instantiate.bind(this)
 				);
-				var gameLoadPromise = loadPromise(mainPack, pckProgressTracker).then(function(xhr) { return xhr.response; });
-				gameInitPromise = Promise.all([gameLoadPromise, gameInitPromise]).then(function(values) {
-					// resolve with pck
-					return new Uint8Array(values[0]);
-				});
-				if (unloadAfterInit)
-					gameInitPromise.then(Engine.unloadEngine);
 				requestAnimationFrame(animateProgress);
+				if (unloadAfterInit)
+					initPromise.then(Engine.unloadEngine);
 			}
-			return gameInitPromise;
+			return initPromise;
 		};
 
-		function instantiate(initializer) {
+		function instantiate(wasmBuf) {
 
-			var rtenvOpts = {
-				noInitialRun: true,
-				thisProgram: getBaseName(basePath),
+			var rtenvProps = {
 				engine: this,
+				ENV: {},
 			};
 			if (typeof stdout === 'function')
-				rtenvOpts.print = stdout;
+				rtenvProps.print = stdout;
 			if (typeof stderr === 'function')
-				rtenvOpts.printErr = stderr;
-			if (typeof WebAssembly === 'object' && initializer instanceof ArrayBuffer) {
-				rtenvOpts.instantiateWasm = function(imports, onSuccess) {
-					WebAssembly.instantiate(initializer, imports).then(function(result) {
-						onSuccess(result.instance);
-					});
-					return {};
-				};
-			} else if (initializer.asm && initializer.mem) {
-				rtenvOpts.asm = initializer.asm;
-				rtenvOpts.memoryInitializerRequest = initializer.mem;
-				rtenvOpts.TOTAL_MEMORY = memorySize;
-			} else {
-				throw new Error("Invalid initializer");
-			}
+				rtenvProps.printErr = stderr;
+			rtenvProps.instantiateWasm = function(imports, onSuccess) {
+				WebAssembly.instantiate(wasmBuf, imports).then(function(result) {
+					onSuccess(result.instance);
+				});
+				return {};
+			};
 
 			return new Promise(function(resolve, reject) {
-				rtenvOpts.onRuntimeInitialized = resolve;
-				rtenvOpts.onAbort = reject;
-				rtenvOpts.engine.rtenv = Engine.RuntimeEnvironment(rtenvOpts);
+				rtenvProps.onRuntimeInitialized = resolve;
+				rtenvProps.onAbort = reject;
+				rtenvProps.engine.rtenv = Engine.RuntimeEnvironment(rtenvProps, LIBS);
 			});
 		}
 
-		this.start = function(mainPack) {
+		this.preloadFile = function(pathOrBuffer, destPath) {
 
-			return this.initGame(mainPack).then(synchronousStart.bind(this));
+			if (pathOrBuffer instanceof ArrayBuffer) {
+				pathOrBuffer = new Uint8Array(pathOrBuffer);
+			} else if (ArrayBuffer.isView(pathOrBuffer)) {
+				pathOrBuffer = new Uint8Array(pathOrBuffer.buffer);
+			}
+			if (pathOrBuffer instanceof Uint8Array) {
+				preloadedFiles.push({
+					path: destPath,
+					buffer: pathOrBuffer
+				});
+				return Promise.resolve();
+			} else if (typeof pathOrBuffer === 'string') {
+				return loadPromise(pathOrBuffer, preloadProgressTracker).then(function(xhr) {
+					preloadedFiles.push({
+						path: destPath || pathOrBuffer,
+						buffer: xhr.response
+					});
+				});
+			} else {
+				throw Promise.reject("Invalid object for preloading");
+			}
 		};
 
-		function synchronousStart(pckView) {
-			// TODO don't expect canvas when runninng as cli tool
+		this.start = function() {
+
+			return this.init().then(
+				Function.prototype.apply.bind(synchronousStart, this, arguments)
+			);
+		};
+
+		this.startGame = function(mainPack) {
+
+			executableName = getBaseName(mainPack);
+			var mainArgs = [];
+			if (!getPathLeaf(mainPack).endsWith('.pck')) {
+				mainArgs = ['--main-pack', getPathLeaf(mainPack)];
+			}
+			return Promise.all([
+				// Load from directory,
+				this.init(getBasePath(mainPack)),
+				// ...but write to root where the engine expects it.
+				this.preloadFile(mainPack, getPathLeaf(mainPack))
+			]).then(
+				Function.prototype.apply.bind(synchronousStart, this, mainArgs)
+			);
+		};
+
+		function synchronousStart() {
+
 			if (canvas instanceof HTMLCanvasElement) {
 				this.rtenv.canvas = canvas;
 			} else {
@@ -125,14 +161,6 @@
 			}
 
 			var actualCanvas = this.rtenv.canvas;
-			var context = false;
-			try {
-				context = actualCanvas.getContext('webgl2') || actualCanvas.getContext('experimental-webgl2');
-			} catch (e) {}
-			if (!context) {
-				throw new Error("WebGL 2 not available");
-			}
-
 			// canvas can grab focus on click
 			if (actualCanvas.tabIndex < 0) {
 				actualCanvas.tabIndex = 0;
@@ -141,19 +169,50 @@
 			actualCanvas.style.padding = 0;
 			actualCanvas.style.borderWidth = 0;
 			actualCanvas.style.borderStyle = 'none';
+			// disable right-click context menu
+			actualCanvas.addEventListener('contextmenu', function(ev) {
+				ev.preventDefault();
+			}, false);
 			// until context restoration is implemented
 			actualCanvas.addEventListener('webglcontextlost', function(ev) {
 				alert("WebGL context lost, please reload the page");
 				ev.preventDefault();
 			}, false);
 
-			this.rtenv.FS.createDataFile('/', this.rtenv.thisProgram + '.pck', pckView, true, true, true);
-			gameInitPromise = null;
-			this.rtenv.callMain();
+			if (locale) {
+				this.rtenv.locale = locale;
+			} else {
+				this.rtenv.locale = navigator.languages ? navigator.languages[0] : navigator.language;
+			}
+			this.rtenv.locale = this.rtenv.locale.split('.')[0];
+			this.rtenv.resizeCanvasOnStart = resizeCanvasOnStart;
+
+			this.rtenv.thisProgram = executableName || getBaseName(basePath);
+
+			preloadedFiles.forEach(function(file) {
+				var dir = LIBS.PATH.dirname(file.path);
+				try {
+					LIBS.FS.stat(dir);
+				} catch (e) {
+					if (e.code !== 'ENOENT') {
+						throw e;
+					}
+					LIBS.FS.mkdirTree(dir);
+				}
+				LIBS.FS.createDataFile('/', file.path, new Uint8Array(file.buffer), true, true, true);
+			}, this);
+
+			preloadedFiles = null;
+			initPromise = null;
+			this.rtenv.callMain(arguments);
 		}
 
 		this.setProgressFunc = function(func) {
 			progressFunc = func;
+		};
+
+		this.setResizeCanvasOnStart = function(enabled) {
+			resizeCanvasOnStart = enabled;
 		};
 
 		function animateProgress() {
@@ -163,7 +222,7 @@
 			var totalIsValid = true;
 			var progressIsFinal = true;
 
-			[loadingFiles, pckProgressTracker].forEach(function(tracker) {
+			[loadingFiles, preloadProgressTracker].forEach(function(tracker) {
 				Object.keys(tracker).forEach(function(file) {
 					if (!tracker[file].final)
 						progressIsFinal = false;
@@ -190,14 +249,20 @@
 			canvas = elem;
 		};
 
-		this.setAsmjsMemorySize = function(size) {
-			memorySize = size;
+		this.setExecutableName = function(newName) {
+
+			executableName = newName;
+		};
+
+		this.setLocale = function(newLocale) {
+
+			locale = newLocale;
 		};
 
 		this.setUnloadAfterInit = function(enabled) {
 
-			if (enabled && !unloadAfterInit && gameInitPromise) {
-				gameInitPromise.then(Engine.unloadEngine);
+			if (enabled && !unloadAfterInit && initPromise) {
+				initPromise.then(Engine.unloadEngine);
 			}
 			unloadAfterInit = enabled;
 		};
@@ -232,26 +297,38 @@
 
 	Engine.RuntimeEnvironment = engine.RuntimeEnvironment;
 
-	Engine.initEngine = function(newBasePath) {
+	Engine.isWebGLAvailable = function(majorVersion = 1) {
+
+		var testContext = false;
+		try {
+			var testCanvas = document.createElement('canvas');
+			if (majorVersion === 1) {
+				testContext = testCanvas.getContext('webgl') || testCanvas.getContext('experimental-webgl');
+			} else if (majorVersion === 2) {
+				testContext = testCanvas.getContext('webgl2') || testCanvas.getContext('experimental-webgl2');
+			}
+		} catch (e) {}
+		return !!testContext;
+	};
+
+	Engine.setWebAssemblyFilenameExtension = function(override) {
+
+		if (String(override).length === 0) {
+			throw new Error('Invalid WebAssembly filename extension override');
+		}
+		wasmFilenameExtensionOverride = String(override);
+	}
+
+	Engine.load = function(newBasePath) {
 
 		if (newBasePath !== undefined) basePath = getBasePath(newBasePath);
 		if (engineLoadPromise === null) {
-			if (USING_WASM) {
-				if (typeof WebAssembly !== 'object')
-					return Promise.reject(new Error("Browser doesn't support WebAssembly"));
-				// TODO cache/retrieve module to/from idb
-				engineLoadPromise = loadPromise(basePath + '.wasm').then(function(xhr) {
-					return xhr.response;
-				});
-			} else {
-				var asmjsPromise = loadPromise(basePath + '.asm.js').then(function(xhr) {
-					return asmjsModulePromise(xhr.response);
-				});
-				var memPromise = loadPromise(basePath + '.mem');
-				engineLoadPromise = Promise.all([asmjsPromise, memPromise]).then(function(values) {
-					return { asm: values[0], mem: values[1] };
-				});
-			}
+			if (typeof WebAssembly !== 'object')
+				return Promise.reject(new Error("Browser doesn't support WebAssembly"));
+			// TODO cache/retrieve module to/from idb
+			engineLoadPromise = loadPromise(basePath + '.' + (wasmFilenameExtensionOverride || 'wasm')).then(function(xhr) {
+				return xhr.response;
+			});
 			engineLoadPromise = engineLoadPromise.catch(function(err) {
 				engineLoadPromise = null;
 				throw err;
@@ -260,34 +337,7 @@
 		return engineLoadPromise;
 	};
 
-	function asmjsModulePromise(module) {
-		var elem = document.createElement('script');
-		var script = new Blob([
-			'Engine.asm = (function() { var Module = {};',
-			module,
-			'return Module.asm; })();'
-		]);
-		var url = URL.createObjectURL(script);
-		elem.src = url;
-		return new Promise(function(resolve, reject) {
-			elem.addEventListener('load', function() {
-				URL.revokeObjectURL(url);
-				var asm = Engine.asm;
-				Engine.asm = undefined;
-				setTimeout(function() {
-					// delay to reclaim compilation memory
-					resolve(asm);
-				}, 1);
-			});
-			elem.addEventListener('error', function() {
-				URL.revokeObjectURL(url);
-				reject("asm.js faiilure");
-			});
-			document.body.appendChild(elem);
-		});
-	}
-
-	Engine.unloadEngine = function() {
+	Engine.unload = function() {
 		engineLoadPromise = null;
 	};
 
@@ -306,7 +356,7 @@
 		if (!file.endsWith('.js')) {
 			xhr.responseType = 'arraybuffer';
 		}
-		['loadstart', 'progress', 'load', 'error', 'timeout', 'abort'].forEach(function(ev) {
+		['loadstart', 'progress', 'load', 'error', 'abort'].forEach(function(ev) {
 			xhr.addEventListener(ev, onXHREvent.bind(xhr, resolve, reject, file, tracker));
 		});
 		xhr.send();
@@ -321,7 +371,7 @@
 				this.abort();
 				return;
 			} else {
-				loadXHR(resolve, reject, file);
+				setTimeout(loadXHR.bind(null, resolve, reject, file, tracker), 1000);
 			}
 		}
 
@@ -348,12 +398,11 @@
 				break;
 
 			case 'error':
-			case 'timeout':
 				if (++tracker[file].attempts >= DOWNLOAD_ATTEMPTS_MAX) {
 					tracker[file].final = true;
 					reject(new Error("Failed loading file '" + file + "'"));
 				} else {
-					loadXHR(resolve, reject, file);
+					setTimeout(loadXHR.bind(null, resolve, reject, file, tracker), 1000);
 				}
 				break;
 

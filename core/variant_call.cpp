@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2017 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2017 Godot Engine contributors (cf. AUTHORS.md)    */
+/* Copyright (c) 2007-2018 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2018 Godot Engine contributors (cf. AUTHORS.md)    */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -27,13 +27,15 @@
 /* TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE     */
 /* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                */
 /*************************************************************************/
+
 #include "variant.h"
 
-#include "core_string_names.h"
-#include "io/compression.h"
-#include "object.h"
-#include "os/os.h"
-#include "script_language.h"
+#include "core/color_names.inc"
+#include "core/core_string_names.h"
+#include "core/io/compression.h"
+#include "core/object.h"
+#include "core/os/os.h"
+#include "core/script_language.h"
 
 typedef void (*VariantFunc)(Variant &r_ret, Variant &p_self, const Variant **p_args);
 typedef void (*VariantConstructFunc)(Variant &r_ret, const Variant **p_args);
@@ -63,7 +65,7 @@ struct _VariantCall {
 			if (arg_count == 0)
 				return true;
 
-			Variant::Type *tptr = &arg_types[0];
+			const Variant::Type *tptr = &arg_types[0];
 
 			for (int i = 0; i < arg_count; i++) {
 
@@ -101,9 +103,10 @@ struct _VariantCall {
 				const Variant *newargs[VARIANT_ARG_MAX];
 				for (int i = 0; i < p_argcount; i++)
 					newargs[i] = p_args[i];
-				int defargcount = def_argcount;
+				// fill in any remaining parameters with defaults
+				int first_default_arg = arg_count - def_argcount;
 				for (int i = p_argcount; i < arg_count; i++)
-					newargs[i] = &default_args[defargcount - (i - p_argcount) - 1]; //default arguments
+					newargs[i] = &default_args[i - first_default_arg];
 #ifdef DEBUG_ENABLED
 				if (!verify_arguments(newargs, r_error))
 					return;
@@ -130,9 +133,9 @@ struct _VariantCall {
 		StringName name;
 		Variant::Type type;
 		Arg() { type = Variant::NIL; }
-		Arg(Variant::Type p_type, const StringName &p_name)
-			: name(p_name),
-			  type(p_type) {
+		Arg(Variant::Type p_type, const StringName &p_name) :
+				name(p_name),
+				type(p_type) {
 		}
 	};
 
@@ -151,10 +154,8 @@ struct _VariantCall {
 		funcdata.func = p_func;
 		funcdata.default_args = p_defaultarg;
 		funcdata._const = p_const;
-#ifdef DEBUG_ENABLED
-		funcdata.return_type = p_return;
 		funcdata.returns = p_has_return;
-#endif
+		funcdata.return_type = p_return;
 
 		if (p_argtype1.name) {
 			funcdata.arg_types.push_back(p_argtype1.type);
@@ -254,7 +255,8 @@ struct _VariantCall {
 	VCALL_LOCALMEM2R(String, replacen);
 	VCALL_LOCALMEM2R(String, insert);
 	VCALL_LOCALMEM0R(String, capitalize);
-	VCALL_LOCALMEM2R(String, split);
+	VCALL_LOCALMEM3R(String, split);
+	VCALL_LOCALMEM3R(String, rsplit);
 	VCALL_LOCALMEM2R(String, split_floats);
 	VCALL_LOCALMEM0R(String, to_upper);
 	VCALL_LOCALMEM0R(String, to_lower);
@@ -262,6 +264,8 @@ struct _VariantCall {
 	VCALL_LOCALMEM1R(String, right);
 	VCALL_LOCALMEM0R(String, dedent);
 	VCALL_LOCALMEM2R(String, strip_edges);
+	VCALL_LOCALMEM1R(String, lstrip);
+	VCALL_LOCALMEM1R(String, rstrip);
 	VCALL_LOCALMEM0R(String, get_extension);
 	VCALL_LOCALMEM0R(String, get_basename);
 	VCALL_LOCALMEM1R(String, plus_file);
@@ -294,6 +298,8 @@ struct _VariantCall {
 	VCALL_LOCALMEM0R(String, hex_to_int);
 	VCALL_LOCALMEM1R(String, pad_decimals);
 	VCALL_LOCALMEM1R(String, pad_zeros);
+	VCALL_LOCALMEM1R(String, trim_prefix);
+	VCALL_LOCALMEM1R(String, trim_suffix);
 
 	static void _call_String_to_ascii(Variant &r_ret, Variant &p_self, const Variant **p_args) {
 
@@ -331,13 +337,17 @@ struct _VariantCall {
 	VCALL_LOCALMEM0R(Vector2, is_normalized);
 	VCALL_LOCALMEM1R(Vector2, distance_to);
 	VCALL_LOCALMEM1R(Vector2, distance_squared_to);
+	VCALL_LOCALMEM1R(Vector2, project);
 	VCALL_LOCALMEM1R(Vector2, angle_to);
 	VCALL_LOCALMEM1R(Vector2, angle_to_point);
 	VCALL_LOCALMEM2R(Vector2, linear_interpolate);
+	VCALL_LOCALMEM2R(Vector2, slerp);
 	VCALL_LOCALMEM4R(Vector2, cubic_interpolate);
 	VCALL_LOCALMEM1R(Vector2, rotated);
 	VCALL_LOCALMEM0R(Vector2, tangent);
 	VCALL_LOCALMEM0R(Vector2, floor);
+	VCALL_LOCALMEM0R(Vector2, ceil);
+	VCALL_LOCALMEM0R(Vector2, round);
 	VCALL_LOCALMEM1R(Vector2, snapped);
 	VCALL_LOCALMEM0R(Vector2, aspect);
 	VCALL_LOCALMEM1R(Vector2, dot);
@@ -345,7 +355,7 @@ struct _VariantCall {
 	VCALL_LOCALMEM1R(Vector2, bounce);
 	VCALL_LOCALMEM1R(Vector2, reflect);
 	VCALL_LOCALMEM0R(Vector2, angle);
-	//VCALL_LOCALMEM1R(Vector2,cross);
+	VCALL_LOCALMEM1R(Vector2, cross);
 	VCALL_LOCALMEM0R(Vector2, abs);
 	VCALL_LOCALMEM1R(Vector2, clamped);
 
@@ -360,6 +370,7 @@ struct _VariantCall {
 	VCALL_LOCALMEM2R(Rect2, grow_margin);
 	VCALL_LOCALMEM4R(Rect2, grow_individual);
 	VCALL_LOCALMEM1R(Rect2, expand);
+	VCALL_LOCALMEM0R(Rect2, abs);
 
 	VCALL_LOCALMEM0R(Vector3, min_axis);
 	VCALL_LOCALMEM0R(Vector3, max_axis);
@@ -371,6 +382,7 @@ struct _VariantCall {
 	VCALL_LOCALMEM1R(Vector3, snapped);
 	VCALL_LOCALMEM2R(Vector3, rotated);
 	VCALL_LOCALMEM2R(Vector3, linear_interpolate);
+	VCALL_LOCALMEM2R(Vector3, slerp);
 	VCALL_LOCALMEM4R(Vector3, cubic_interpolate);
 	VCALL_LOCALMEM1R(Vector3, dot);
 	VCALL_LOCALMEM1R(Vector3, cross);
@@ -379,8 +391,10 @@ struct _VariantCall {
 	VCALL_LOCALMEM0R(Vector3, abs);
 	VCALL_LOCALMEM0R(Vector3, floor);
 	VCALL_LOCALMEM0R(Vector3, ceil);
+	VCALL_LOCALMEM0R(Vector3, round);
 	VCALL_LOCALMEM1R(Vector3, distance_to);
 	VCALL_LOCALMEM1R(Vector3, distance_squared_to);
+	VCALL_LOCALMEM1R(Vector3, project);
 	VCALL_LOCALMEM1R(Vector3, angle_to);
 	VCALL_LOCALMEM1R(Vector3, slide);
 	VCALL_LOCALMEM1R(Vector3, bounce);
@@ -429,15 +443,25 @@ struct _VariantCall {
 	VCALL_LOCALMEM2R(Quat, slerp);
 	VCALL_LOCALMEM2R(Quat, slerpni);
 	VCALL_LOCALMEM4R(Quat, cubic_slerp);
+	VCALL_LOCALMEM0R(Quat, get_euler);
+	VCALL_LOCALMEM1(Quat, set_euler);
+	VCALL_LOCALMEM2(Quat, set_axis_angle);
 
-	VCALL_LOCALMEM0R(Color, to_rgba32);
 	VCALL_LOCALMEM0R(Color, to_argb32);
+	VCALL_LOCALMEM0R(Color, to_abgr32);
+	VCALL_LOCALMEM0R(Color, to_rgba32);
+	VCALL_LOCALMEM0R(Color, to_argb64);
+	VCALL_LOCALMEM0R(Color, to_abgr64);
+	VCALL_LOCALMEM0R(Color, to_rgba64);
 	VCALL_LOCALMEM0R(Color, gray);
 	VCALL_LOCALMEM0R(Color, inverted);
 	VCALL_LOCALMEM0R(Color, contrasted);
 	VCALL_LOCALMEM2R(Color, linear_interpolate);
 	VCALL_LOCALMEM1R(Color, blend);
+	VCALL_LOCALMEM1R(Color, lightened);
+	VCALL_LOCALMEM1R(Color, darkened);
 	VCALL_LOCALMEM1R(Color, to_html);
+	VCALL_LOCALMEM4R(Color, from_hsv);
 
 	VCALL_LOCALMEM0R(RID, get_id);
 
@@ -446,7 +470,8 @@ struct _VariantCall {
 	VCALL_LOCALMEM1R(NodePath, get_name);
 	VCALL_LOCALMEM0R(NodePath, get_subname_count);
 	VCALL_LOCALMEM1R(NodePath, get_subname);
-	VCALL_LOCALMEM0R(NodePath, get_property);
+	VCALL_LOCALMEM0R(NodePath, get_concatenated_subnames);
+	VCALL_LOCALMEM0R(NodePath, get_as_property_path);
 	VCALL_LOCALMEM0R(NodePath, is_empty);
 
 	VCALL_LOCALMEM0R(Dictionary, size);
@@ -458,6 +483,8 @@ struct _VariantCall {
 	VCALL_LOCALMEM0R(Dictionary, hash);
 	VCALL_LOCALMEM0R(Dictionary, keys);
 	VCALL_LOCALMEM0R(Dictionary, values);
+	VCALL_LOCALMEM1R(Dictionary, duplicate);
+	VCALL_LOCALMEM2R(Dictionary, get);
 
 	VCALL_LOCALMEM2(Array, set);
 	VCALL_LOCALMEM1R(Array, get);
@@ -483,8 +510,13 @@ struct _VariantCall {
 	VCALL_LOCALMEM1(Array, erase);
 	VCALL_LOCALMEM0(Array, sort);
 	VCALL_LOCALMEM2(Array, sort_custom);
-	VCALL_LOCALMEM0R(Array, duplicate);
+	VCALL_LOCALMEM0(Array, shuffle);
+	VCALL_LOCALMEM2R(Array, bsearch);
+	VCALL_LOCALMEM4R(Array, bsearch_custom);
+	VCALL_LOCALMEM1R(Array, duplicate);
 	VCALL_LOCALMEM0(Array, invert);
+	VCALL_LOCALMEM0R(Array, max);
+	VCALL_LOCALMEM0R(Array, min);
 
 	static void _call_PoolByteArray_get_string_from_ascii(Variant &r_ret, Variant &p_self, const Variant **p_args) {
 
@@ -494,7 +526,7 @@ struct _VariantCall {
 			PoolByteArray::Read r = ba->read();
 			CharString cs;
 			cs.resize(ba->size() + 1);
-			copymem(cs.ptr(), r.ptr(), ba->size());
+			copymem(cs.ptrw(), r.ptr(), ba->size());
 			cs[ba->size()] = 0;
 
 			s = cs.get_data();
@@ -655,26 +687,26 @@ struct _VariantCall {
 #define VCALL_PTR5R(m_type, m_method) \
 	static void _call_##m_type##_##m_method(Variant &r_ret, Variant &p_self, const Variant **p_args) { r_ret = reinterpret_cast<m_type *>(p_self._data._ptr)->m_method(*p_args[0], *p_args[1], *p_args[2], *p_args[3], *p_args[4]); }
 
-	VCALL_PTR0R(Rect3, get_area);
-	VCALL_PTR0R(Rect3, has_no_area);
-	VCALL_PTR0R(Rect3, has_no_surface);
-	VCALL_PTR1R(Rect3, intersects);
-	VCALL_PTR1R(Rect3, encloses);
-	VCALL_PTR1R(Rect3, merge);
-	VCALL_PTR1R(Rect3, intersection);
-	VCALL_PTR1R(Rect3, intersects_plane);
-	VCALL_PTR2R(Rect3, intersects_segment);
-	VCALL_PTR1R(Rect3, has_point);
-	VCALL_PTR1R(Rect3, get_support);
-	VCALL_PTR0R(Rect3, get_longest_axis);
-	VCALL_PTR0R(Rect3, get_longest_axis_index);
-	VCALL_PTR0R(Rect3, get_longest_axis_size);
-	VCALL_PTR0R(Rect3, get_shortest_axis);
-	VCALL_PTR0R(Rect3, get_shortest_axis_index);
-	VCALL_PTR0R(Rect3, get_shortest_axis_size);
-	VCALL_PTR1R(Rect3, expand);
-	VCALL_PTR1R(Rect3, grow);
-	VCALL_PTR1R(Rect3, get_endpoint);
+	VCALL_PTR0R(AABB, get_area);
+	VCALL_PTR0R(AABB, has_no_area);
+	VCALL_PTR0R(AABB, has_no_surface);
+	VCALL_PTR1R(AABB, intersects);
+	VCALL_PTR1R(AABB, encloses);
+	VCALL_PTR1R(AABB, merge);
+	VCALL_PTR1R(AABB, intersection);
+	VCALL_PTR1R(AABB, intersects_plane);
+	VCALL_PTR2R(AABB, intersects_segment);
+	VCALL_PTR1R(AABB, has_point);
+	VCALL_PTR1R(AABB, get_support);
+	VCALL_PTR0R(AABB, get_longest_axis);
+	VCALL_PTR0R(AABB, get_longest_axis_index);
+	VCALL_PTR0R(AABB, get_longest_axis_size);
+	VCALL_PTR0R(AABB, get_shortest_axis);
+	VCALL_PTR0R(AABB, get_shortest_axis_index);
+	VCALL_PTR0R(AABB, get_shortest_axis_size);
+	VCALL_PTR1R(AABB, expand);
+	VCALL_PTR1R(AABB, grow);
+	VCALL_PTR1R(AABB, get_endpoint);
 
 	VCALL_PTR0R(Transform2D, inverse);
 	VCALL_PTR0R(Transform2D, affine_inverse);
@@ -739,6 +771,7 @@ struct _VariantCall {
 	VCALL_PTR1R(Basis, xform_inv);
 	VCALL_PTR0R(Basis, get_orthogonal_index);
 	VCALL_PTR0R(Basis, orthonormalized);
+	VCALL_PTR2R(Basis, slerp);
 
 	VCALL_PTR0R(Transform, inverse);
 	VCALL_PTR0R(Transform, affine_inverse);
@@ -755,7 +788,7 @@ struct _VariantCall {
 
 			case Variant::VECTOR3: r_ret = reinterpret_cast<Transform *>(p_self._data._ptr)->xform(p_args[0]->operator Vector3()); return;
 			case Variant::PLANE: r_ret = reinterpret_cast<Transform *>(p_self._data._ptr)->xform(p_args[0]->operator Plane()); return;
-			case Variant::RECT3: r_ret = reinterpret_cast<Transform *>(p_self._data._ptr)->xform(p_args[0]->operator Rect3()); return;
+			case Variant::AABB: r_ret = reinterpret_cast<Transform *>(p_self._data._ptr)->xform(p_args[0]->operator ::AABB()); return;
 			default: r_ret = Variant();
 		}
 	}
@@ -766,7 +799,7 @@ struct _VariantCall {
 
 			case Variant::VECTOR3: r_ret = reinterpret_cast<Transform *>(p_self._data._ptr)->xform_inv(p_args[0]->operator Vector3()); return;
 			case Variant::PLANE: r_ret = reinterpret_cast<Transform *>(p_self._data._ptr)->xform_inv(p_args[0]->operator Plane()); return;
-			case Variant::RECT3: r_ret = reinterpret_cast<Transform *>(p_self._data._ptr)->xform_inv(p_args[0]->operator Rect3()); return;
+			case Variant::AABB: r_ret = reinterpret_cast<Transform *>(p_self._data._ptr)->xform_inv(p_args[0]->operator ::AABB()); return;
 			default: r_ret = Variant();
 		}
 	}
@@ -858,6 +891,11 @@ struct _VariantCall {
 		r_ret = Quat(((Vector3)(*p_args[0])), ((float)(*p_args[1])));
 	}
 
+	static void Quat_init3(Variant &r_ret, const Variant **p_args) {
+
+		r_ret = Quat(((Vector3)(*p_args[0])));
+	}
+
 	static void Color_init1(Variant &r_ret, const Variant **p_args) {
 
 		r_ret = Color(*p_args[0], *p_args[1], *p_args[2], *p_args[3]);
@@ -878,9 +916,9 @@ struct _VariantCall {
 		r_ret = Color::hex(*p_args[0]);
 	}
 
-	static void Rect3_init1(Variant &r_ret, const Variant **p_args) {
+	static void AABB_init1(Variant &r_ret, const Variant **p_args) {
 
-		r_ret = Rect3(*p_args[0], *p_args[1]);
+		r_ret = ::AABB(*p_args[0], *p_args[1]);
 	}
 
 	static void Basis_init1(Variant &r_ret, const Variant **p_args) {
@@ -895,11 +933,6 @@ struct _VariantCall {
 	static void Basis_init2(Variant &r_ret, const Variant **p_args) {
 
 		r_ret = Basis(p_args[0]->operator Vector3(), p_args[1]->operator real_t());
-	}
-
-	static void Basis_init3(Variant &r_ret, const Variant **p_args) {
-
-		r_ret = Basis(p_args[0]->operator Vector3());
 	}
 
 	static void Transform_init1(Variant &r_ret, const Variant **p_args) {
@@ -962,6 +995,7 @@ struct _VariantCall {
 #ifdef DEBUG_ENABLED
 		List<StringName> value_ordered;
 #endif
+		Map<StringName, Variant> variant_value;
 	};
 
 	static ConstantData *constant_data;
@@ -972,6 +1006,11 @@ struct _VariantCall {
 #ifdef DEBUG_ENABLED
 		constant_data[p_type].value_ordered.push_back(p_constant_name);
 #endif
+	}
+
+	static void add_variant_constant(int p_type, StringName p_constant_name, const Variant &p_constant_value) {
+
+		constant_data[p_type].variant_value[p_constant_name] = p_constant_value;
 	}
 };
 
@@ -1058,8 +1097,8 @@ Variant Variant::construct(const Variant::Type p_type, const Variant **p_args, i
 			case TRANSFORM2D: return Transform2D();
 			case PLANE: return Plane();
 			case QUAT: return Quat();
-			case RECT3:
-				return Rect3(); // 10
+			case AABB:
+				return ::AABB(); // 10
 			case BASIS: return Basis();
 			case TRANSFORM:
 				return Transform();
@@ -1123,7 +1162,7 @@ Variant Variant::construct(const Variant::Type p_type, const Variant **p_args, i
 				return Variant(bool(*p_args[0]));
 			}
 			case INT: {
-				return (int(*p_args[0]));
+				return (int64_t(*p_args[0]));
 			}
 			case REAL: {
 				return real_t(*p_args[0]);
@@ -1137,9 +1176,9 @@ Variant Variant::construct(const Variant::Type p_type, const Variant **p_args, i
 			case RECT2: return (Rect2(*p_args[0]));
 			case VECTOR3: return (Vector3(*p_args[0]));
 			case PLANE: return (Plane(*p_args[0]));
-			case QUAT: return (Quat(*p_args[0]));
-			case RECT3:
-				return (Rect3(*p_args[0])); // 10
+			case QUAT: return (p_args[0]->operator Quat());
+			case AABB:
+				return (::AABB(*p_args[0])); // 10
 			case BASIS: return (Basis(p_args[0]->operator Basis()));
 			case TRANSFORM:
 				return (Transform(p_args[0]->operator Transform()));
@@ -1325,7 +1364,7 @@ void Variant::get_constructor_list(Variant::Type p_type, List<MethodInfo> *p_lis
 	}
 }
 
-void Variant::get_numeric_constants_for_type(Variant::Type p_type, List<StringName> *p_constants) {
+void Variant::get_constants_for_type(Variant::Type p_type, List<StringName> *p_constants) {
 
 	ERR_FAIL_INDEX(p_type, Variant::VARIANT_MAX);
 
@@ -1341,16 +1380,21 @@ void Variant::get_numeric_constants_for_type(Variant::Type p_type, List<StringNa
 		p_constants->push_back(E->key());
 #endif
 	}
+
+	for (Map<StringName, Variant>::Element *E = cd.variant_value.front(); E; E = E->next()) {
+
+		p_constants->push_back(E->key());
+	}
 }
 
-bool Variant::has_numeric_constant(Variant::Type p_type, const StringName &p_value) {
+bool Variant::has_constant(Variant::Type p_type, const StringName &p_value) {
 
 	ERR_FAIL_INDEX_V(p_type, Variant::VARIANT_MAX, false);
 	_VariantCall::ConstantData &cd = _VariantCall::constant_data[p_type];
-	return cd.value.has(p_value);
+	return cd.value.has(p_value) || cd.variant_value.has(p_value);
 }
 
-int Variant::get_numeric_constant_value(Variant::Type p_type, const StringName &p_value, bool *r_valid) {
+Variant Variant::get_constant_value(Variant::Type p_type, const StringName &p_value, bool *r_valid) {
 
 	if (r_valid)
 		*r_valid = false;
@@ -1360,7 +1404,14 @@ int Variant::get_numeric_constant_value(Variant::Type p_type, const StringName &
 
 	Map<StringName, int>::Element *E = cd.value.find(p_value);
 	if (!E) {
-		return -1;
+		Map<StringName, Variant>::Element *E = cd.variant_value.find(p_value);
+		if (E) {
+			if (r_valid)
+				*r_valid = true;
+			return E->get();
+		} else {
+			return -1;
+		}
 	}
 	if (r_valid)
 		*r_valid = true;
@@ -1445,7 +1496,8 @@ void register_variant_methods() {
 	ADDFUNC2R(STRING, STRING, String, replacen, STRING, "what", STRING, "forwhat", varray());
 	ADDFUNC2R(STRING, STRING, String, insert, INT, "position", STRING, "what", varray());
 	ADDFUNC0R(STRING, STRING, String, capitalize, varray());
-	ADDFUNC2R(STRING, POOL_STRING_ARRAY, String, split, STRING, "divisor", BOOL, "allow_empty", varray(true));
+	ADDFUNC3R(STRING, POOL_STRING_ARRAY, String, split, STRING, "divisor", BOOL, "allow_empty", INT, "maxsplit", varray(true, 0));
+	ADDFUNC3R(STRING, POOL_STRING_ARRAY, String, rsplit, STRING, "divisor", BOOL, "allow_empty", INT, "maxsplit", varray(true, 0));
 	ADDFUNC2R(STRING, POOL_REAL_ARRAY, String, split_floats, STRING, "divisor", BOOL, "allow_empty", varray(true));
 
 	ADDFUNC0R(STRING, STRING, String, to_upper, varray());
@@ -1454,6 +1506,8 @@ void register_variant_methods() {
 	ADDFUNC1R(STRING, STRING, String, left, INT, "position", varray());
 	ADDFUNC1R(STRING, STRING, String, right, INT, "position", varray());
 	ADDFUNC2R(STRING, STRING, String, strip_edges, BOOL, "left", BOOL, "right", varray(true, true));
+	ADDFUNC1R(STRING, STRING, String, lstrip, STRING, "chars", varray());
+	ADDFUNC1R(STRING, STRING, String, rstrip, STRING, "chars", varray());
 	ADDFUNC0R(STRING, STRING, String, get_extension, varray());
 	ADDFUNC0R(STRING, STRING, String, get_basename, varray());
 	ADDFUNC1R(STRING, STRING, String, plus_file, STRING, "file", varray());
@@ -1487,6 +1541,8 @@ void register_variant_methods() {
 	ADDFUNC0R(STRING, INT, String, hex_to_int, varray());
 	ADDFUNC1R(STRING, STRING, String, pad_decimals, INT, "digits", varray());
 	ADDFUNC1R(STRING, STRING, String, pad_zeros, INT, "digits", varray());
+	ADDFUNC1R(STRING, STRING, String, trim_prefix, STRING, "prefix", varray());
+	ADDFUNC1R(STRING, STRING, String, trim_suffix, STRING, "suffix", varray());
 
 	ADDFUNC0R(STRING, POOL_BYTE_ARRAY, String, to_ascii, varray());
 	ADDFUNC0R(STRING, POOL_BYTE_ARRAY, String, to_utf8, varray());
@@ -1498,20 +1554,24 @@ void register_variant_methods() {
 	ADDFUNC0R(VECTOR2, BOOL, Vector2, is_normalized, varray());
 	ADDFUNC1R(VECTOR2, REAL, Vector2, distance_to, VECTOR2, "to", varray());
 	ADDFUNC1R(VECTOR2, REAL, Vector2, distance_squared_to, VECTOR2, "to", varray());
+	ADDFUNC1R(VECTOR2, VECTOR2, Vector2, project, VECTOR2, "b", varray());
 	ADDFUNC1R(VECTOR2, REAL, Vector2, angle_to, VECTOR2, "to", varray());
 	ADDFUNC1R(VECTOR2, REAL, Vector2, angle_to_point, VECTOR2, "to", varray());
 	ADDFUNC2R(VECTOR2, VECTOR2, Vector2, linear_interpolate, VECTOR2, "b", REAL, "t", varray());
+	ADDFUNC2R(VECTOR2, VECTOR2, Vector2, slerp, VECTOR2, "b", REAL, "t", varray());
 	ADDFUNC4R(VECTOR2, VECTOR2, Vector2, cubic_interpolate, VECTOR2, "b", VECTOR2, "pre_a", VECTOR2, "post_b", REAL, "t", varray());
 	ADDFUNC1R(VECTOR2, VECTOR2, Vector2, rotated, REAL, "phi", varray());
 	ADDFUNC0R(VECTOR2, VECTOR2, Vector2, tangent, varray());
 	ADDFUNC0R(VECTOR2, VECTOR2, Vector2, floor, varray());
+	ADDFUNC0R(VECTOR2, VECTOR2, Vector2, ceil, varray());
+	ADDFUNC0R(VECTOR2, VECTOR2, Vector2, round, varray());
 	ADDFUNC1R(VECTOR2, VECTOR2, Vector2, snapped, VECTOR2, "by", varray());
 	ADDFUNC0R(VECTOR2, REAL, Vector2, aspect, varray());
 	ADDFUNC1R(VECTOR2, REAL, Vector2, dot, VECTOR2, "with", varray());
 	ADDFUNC1R(VECTOR2, VECTOR2, Vector2, slide, VECTOR2, "n", varray());
 	ADDFUNC1R(VECTOR2, VECTOR2, Vector2, bounce, VECTOR2, "n", varray());
 	ADDFUNC1R(VECTOR2, VECTOR2, Vector2, reflect, VECTOR2, "n", varray());
-	//ADDFUNC1R(VECTOR2,REAL,Vector2,cross,VECTOR2,"with",varray());
+	ADDFUNC1R(VECTOR2, REAL, Vector2, cross, VECTOR2, "with", varray());
 	ADDFUNC0R(VECTOR2, VECTOR2, Vector2, abs, varray());
 	ADDFUNC1R(VECTOR2, VECTOR2, Vector2, clamped, REAL, "length", varray());
 
@@ -1526,6 +1586,7 @@ void register_variant_methods() {
 	ADDFUNC2R(RECT2, RECT2, Rect2, grow_margin, INT, "margin", REAL, "by", varray());
 	ADDFUNC4R(RECT2, RECT2, Rect2, grow_individual, REAL, "left", REAL, "top", REAL, "right", REAL, " bottom", varray());
 	ADDFUNC1R(RECT2, RECT2, Rect2, expand, VECTOR2, "to", varray());
+	ADDFUNC0R(RECT2, RECT2, Rect2, abs, varray());
 
 	ADDFUNC0R(VECTOR3, INT, Vector3, min_axis, varray());
 	ADDFUNC0R(VECTOR3, INT, Vector3, max_axis, varray());
@@ -1534,9 +1595,10 @@ void register_variant_methods() {
 	ADDFUNC0R(VECTOR3, BOOL, Vector3, is_normalized, varray());
 	ADDFUNC0R(VECTOR3, VECTOR3, Vector3, normalized, varray());
 	ADDFUNC0R(VECTOR3, VECTOR3, Vector3, inverse, varray());
-	ADDFUNC1R(VECTOR3, VECTOR3, Vector3, snapped, REAL, "by", varray());
+	ADDFUNC1R(VECTOR3, VECTOR3, Vector3, snapped, VECTOR3, "by", varray());
 	ADDFUNC2R(VECTOR3, VECTOR3, Vector3, rotated, VECTOR3, "axis", REAL, "phi", varray());
 	ADDFUNC2R(VECTOR3, VECTOR3, Vector3, linear_interpolate, VECTOR3, "b", REAL, "t", varray());
+	ADDFUNC2R(VECTOR3, VECTOR3, Vector3, slerp, VECTOR3, "b", REAL, "t", varray());
 	ADDFUNC4R(VECTOR3, VECTOR3, Vector3, cubic_interpolate, VECTOR3, "b", VECTOR3, "pre_a", VECTOR3, "post_b", REAL, "t", varray());
 	ADDFUNC1R(VECTOR3, REAL, Vector3, dot, VECTOR3, "b", varray());
 	ADDFUNC1R(VECTOR3, VECTOR3, Vector3, cross, VECTOR3, "b", varray());
@@ -1545,8 +1607,10 @@ void register_variant_methods() {
 	ADDFUNC0R(VECTOR3, VECTOR3, Vector3, abs, varray());
 	ADDFUNC0R(VECTOR3, VECTOR3, Vector3, floor, varray());
 	ADDFUNC0R(VECTOR3, VECTOR3, Vector3, ceil, varray());
+	ADDFUNC0R(VECTOR3, VECTOR3, Vector3, round, varray());
 	ADDFUNC1R(VECTOR3, REAL, Vector3, distance_to, VECTOR3, "b", varray());
 	ADDFUNC1R(VECTOR3, REAL, Vector3, distance_squared_to, VECTOR3, "b", varray());
+	ADDFUNC1R(VECTOR3, VECTOR3, Vector3, project, VECTOR3, "b", varray());
 	ADDFUNC1R(VECTOR3, REAL, Vector3, angle_to, VECTOR3, "to", varray());
 	ADDFUNC1R(VECTOR3, VECTOR3, Vector3, slide, VECTOR3, "n", varray());
 	ADDFUNC1R(VECTOR3, VECTOR3, Vector3, bounce, VECTOR3, "n", varray());
@@ -1573,15 +1637,25 @@ void register_variant_methods() {
 	ADDFUNC2R(QUAT, QUAT, Quat, slerp, QUAT, "b", REAL, "t", varray());
 	ADDFUNC2R(QUAT, QUAT, Quat, slerpni, QUAT, "b", REAL, "t", varray());
 	ADDFUNC4R(QUAT, QUAT, Quat, cubic_slerp, QUAT, "b", QUAT, "pre_a", QUAT, "post_b", REAL, "t", varray());
+	ADDFUNC0R(QUAT, VECTOR3, Quat, get_euler, varray());
+	ADDFUNC1(QUAT, NIL, Quat, set_euler, VECTOR3, "euler", varray());
+	ADDFUNC2(QUAT, NIL, Quat, set_axis_angle, VECTOR3, "axis", REAL, "angle", varray());
 
-	ADDFUNC0R(COLOR, INT, Color, to_rgba32, varray());
 	ADDFUNC0R(COLOR, INT, Color, to_argb32, varray());
+	ADDFUNC0R(COLOR, INT, Color, to_abgr32, varray());
+	ADDFUNC0R(COLOR, INT, Color, to_rgba32, varray());
+	ADDFUNC0R(COLOR, INT, Color, to_argb64, varray());
+	ADDFUNC0R(COLOR, INT, Color, to_abgr64, varray());
+	ADDFUNC0R(COLOR, INT, Color, to_rgba64, varray());
 	ADDFUNC0R(COLOR, REAL, Color, gray, varray());
 	ADDFUNC0R(COLOR, COLOR, Color, inverted, varray());
 	ADDFUNC0R(COLOR, COLOR, Color, contrasted, varray());
 	ADDFUNC2R(COLOR, COLOR, Color, linear_interpolate, COLOR, "b", REAL, "t", varray());
 	ADDFUNC1R(COLOR, COLOR, Color, blend, COLOR, "over", varray());
+	ADDFUNC1R(COLOR, COLOR, Color, lightened, REAL, "amount", varray());
+	ADDFUNC1R(COLOR, COLOR, Color, darkened, REAL, "amount", varray());
 	ADDFUNC1R(COLOR, STRING, Color, to_html, BOOL, "with_alpha", varray(true));
+	ADDFUNC4R(COLOR, COLOR, Color, from_hsv, REAL, "h", REAL, "s", REAL, "v", REAL, "a", varray(1.0));
 
 	ADDFUNC0R(_RID, INT, RID, get_id, varray());
 
@@ -1590,7 +1664,8 @@ void register_variant_methods() {
 	ADDFUNC1R(NODE_PATH, STRING, NodePath, get_name, INT, "idx", varray());
 	ADDFUNC0R(NODE_PATH, INT, NodePath, get_subname_count, varray());
 	ADDFUNC1R(NODE_PATH, STRING, NodePath, get_subname, INT, "idx", varray());
-	ADDFUNC0R(NODE_PATH, STRING, NodePath, get_property, varray());
+	ADDFUNC0R(NODE_PATH, STRING, NodePath, get_concatenated_subnames, varray());
+	ADDFUNC0R(NODE_PATH, NODE_PATH, NodePath, get_as_property_path, varray());
 	ADDFUNC0R(NODE_PATH, BOOL, NodePath, is_empty, varray());
 
 	ADDFUNC0R(DICTIONARY, INT, Dictionary, size, varray());
@@ -1598,10 +1673,12 @@ void register_variant_methods() {
 	ADDFUNC0NC(DICTIONARY, NIL, Dictionary, clear, varray());
 	ADDFUNC1R(DICTIONARY, BOOL, Dictionary, has, NIL, "key", varray());
 	ADDFUNC1R(DICTIONARY, BOOL, Dictionary, has_all, ARRAY, "keys", varray());
-	ADDFUNC1(DICTIONARY, NIL, Dictionary, erase, NIL, "key", varray());
+	ADDFUNC1R(DICTIONARY, BOOL, Dictionary, erase, NIL, "key", varray());
 	ADDFUNC0R(DICTIONARY, INT, Dictionary, hash, varray());
 	ADDFUNC0R(DICTIONARY, ARRAY, Dictionary, keys, varray());
 	ADDFUNC0R(DICTIONARY, ARRAY, Dictionary, values, varray());
+	ADDFUNC1R(DICTIONARY, DICTIONARY, Dictionary, duplicate, BOOL, "deep", varray(false));
+	ADDFUNC2R(DICTIONARY, NIL, Dictionary, get, NIL, "key", NIL, "default", varray(Variant()));
 
 	ADDFUNC0R(ARRAY, INT, Array, size, varray());
 	ADDFUNC0R(ARRAY, BOOL, Array, empty, varray());
@@ -1625,8 +1702,13 @@ void register_variant_methods() {
 	ADDFUNC0RNC(ARRAY, NIL, Array, pop_front, varray());
 	ADDFUNC0NC(ARRAY, NIL, Array, sort, varray());
 	ADDFUNC2NC(ARRAY, NIL, Array, sort_custom, OBJECT, "obj", STRING, "func", varray());
+	ADDFUNC0NC(ARRAY, NIL, Array, shuffle, varray());
+	ADDFUNC2R(ARRAY, INT, Array, bsearch, NIL, "value", BOOL, "before", varray(true));
+	ADDFUNC4R(ARRAY, INT, Array, bsearch_custom, NIL, "value", OBJECT, "obj", STRING, "func", BOOL, "before", varray(true));
 	ADDFUNC0NC(ARRAY, NIL, Array, invert, varray());
-	ADDFUNC0RNC(ARRAY, ARRAY, Array, duplicate, varray());
+	ADDFUNC1R(ARRAY, ARRAY, Array, duplicate, BOOL, "deep", varray(false));
+	ADDFUNC0R(ARRAY, NIL, Array, max, varray());
+	ADDFUNC0R(ARRAY, NIL, Array, min, varray());
 
 	ADDFUNC0R(POOL_BYTE_ARRAY, INT, PoolByteArray, size, varray());
 	ADDFUNC2(POOL_BYTE_ARRAY, NIL, PoolByteArray, set, INT, "idx", INT, "byte", varray());
@@ -1707,26 +1789,26 @@ void register_variant_methods() {
 
 	//pointerbased
 
-	ADDFUNC0R(RECT3, REAL, Rect3, get_area, varray());
-	ADDFUNC0R(RECT3, BOOL, Rect3, has_no_area, varray());
-	ADDFUNC0R(RECT3, BOOL, Rect3, has_no_surface, varray());
-	ADDFUNC1R(RECT3, BOOL, Rect3, intersects, RECT3, "with", varray());
-	ADDFUNC1R(RECT3, BOOL, Rect3, encloses, RECT3, "with", varray());
-	ADDFUNC1R(RECT3, RECT3, Rect3, merge, RECT3, "with", varray());
-	ADDFUNC1R(RECT3, RECT3, Rect3, intersection, RECT3, "with", varray());
-	ADDFUNC1R(RECT3, BOOL, Rect3, intersects_plane, PLANE, "plane", varray());
-	ADDFUNC2R(RECT3, BOOL, Rect3, intersects_segment, VECTOR3, "from", VECTOR3, "to", varray());
-	ADDFUNC1R(RECT3, BOOL, Rect3, has_point, VECTOR3, "point", varray());
-	ADDFUNC1R(RECT3, VECTOR3, Rect3, get_support, VECTOR3, "dir", varray());
-	ADDFUNC0R(RECT3, VECTOR3, Rect3, get_longest_axis, varray());
-	ADDFUNC0R(RECT3, INT, Rect3, get_longest_axis_index, varray());
-	ADDFUNC0R(RECT3, REAL, Rect3, get_longest_axis_size, varray());
-	ADDFUNC0R(RECT3, VECTOR3, Rect3, get_shortest_axis, varray());
-	ADDFUNC0R(RECT3, INT, Rect3, get_shortest_axis_index, varray());
-	ADDFUNC0R(RECT3, REAL, Rect3, get_shortest_axis_size, varray());
-	ADDFUNC1R(RECT3, RECT3, Rect3, expand, VECTOR3, "to_point", varray());
-	ADDFUNC1R(RECT3, RECT3, Rect3, grow, REAL, "by", varray());
-	ADDFUNC1R(RECT3, VECTOR3, Rect3, get_endpoint, INT, "idx", varray());
+	ADDFUNC0R(AABB, REAL, AABB, get_area, varray());
+	ADDFUNC0R(AABB, BOOL, AABB, has_no_area, varray());
+	ADDFUNC0R(AABB, BOOL, AABB, has_no_surface, varray());
+	ADDFUNC1R(AABB, BOOL, AABB, intersects, AABB, "with", varray());
+	ADDFUNC1R(AABB, BOOL, AABB, encloses, AABB, "with", varray());
+	ADDFUNC1R(AABB, AABB, AABB, merge, AABB, "with", varray());
+	ADDFUNC1R(AABB, AABB, AABB, intersection, AABB, "with", varray());
+	ADDFUNC1R(AABB, BOOL, AABB, intersects_plane, PLANE, "plane", varray());
+	ADDFUNC2R(AABB, BOOL, AABB, intersects_segment, VECTOR3, "from", VECTOR3, "to", varray());
+	ADDFUNC1R(AABB, BOOL, AABB, has_point, VECTOR3, "point", varray());
+	ADDFUNC1R(AABB, VECTOR3, AABB, get_support, VECTOR3, "dir", varray());
+	ADDFUNC0R(AABB, VECTOR3, AABB, get_longest_axis, varray());
+	ADDFUNC0R(AABB, INT, AABB, get_longest_axis_index, varray());
+	ADDFUNC0R(AABB, REAL, AABB, get_longest_axis_size, varray());
+	ADDFUNC0R(AABB, VECTOR3, AABB, get_shortest_axis, varray());
+	ADDFUNC0R(AABB, INT, AABB, get_shortest_axis_index, varray());
+	ADDFUNC0R(AABB, REAL, AABB, get_shortest_axis_size, varray());
+	ADDFUNC1R(AABB, AABB, AABB, expand, VECTOR3, "to_point", varray());
+	ADDFUNC1R(AABB, AABB, AABB, grow, REAL, "by", varray());
+	ADDFUNC1R(AABB, VECTOR3, AABB, get_endpoint, INT, "idx", varray());
 
 	ADDFUNC0R(TRANSFORM2D, TRANSFORM2D, Transform2D, inverse, varray());
 	ADDFUNC0R(TRANSFORM2D, TRANSFORM2D, Transform2D, affine_inverse, varray());
@@ -1737,10 +1819,10 @@ void register_variant_methods() {
 	ADDFUNC1R(TRANSFORM2D, TRANSFORM2D, Transform2D, rotated, REAL, "phi", varray());
 	ADDFUNC1R(TRANSFORM2D, TRANSFORM2D, Transform2D, scaled, VECTOR2, "scale", varray());
 	ADDFUNC1R(TRANSFORM2D, TRANSFORM2D, Transform2D, translated, VECTOR2, "offset", varray());
-	ADDFUNC1R(TRANSFORM2D, TRANSFORM2D, Transform2D, xform, NIL, "v", varray());
-	ADDFUNC1R(TRANSFORM2D, TRANSFORM2D, Transform2D, xform_inv, NIL, "v", varray());
-	ADDFUNC1R(TRANSFORM2D, TRANSFORM2D, Transform2D, basis_xform, NIL, "v", varray());
-	ADDFUNC1R(TRANSFORM2D, TRANSFORM2D, Transform2D, basis_xform_inv, NIL, "v", varray());
+	ADDFUNC1R(TRANSFORM2D, NIL, Transform2D, xform, NIL, "v", varray());
+	ADDFUNC1R(TRANSFORM2D, NIL, Transform2D, xform_inv, NIL, "v", varray());
+	ADDFUNC1R(TRANSFORM2D, VECTOR2, Transform2D, basis_xform, VECTOR2, "v", varray());
+	ADDFUNC1R(TRANSFORM2D, VECTOR2, Transform2D, basis_xform_inv, VECTOR2, "v", varray());
 	ADDFUNC2R(TRANSFORM2D, TRANSFORM2D, Transform2D, interpolate_with, TRANSFORM2D, "transform", REAL, "weight", varray());
 
 	ADDFUNC0R(BASIS, BASIS, Basis, inverse, varray());
@@ -1757,6 +1839,7 @@ void register_variant_methods() {
 	ADDFUNC1R(BASIS, VECTOR3, Basis, xform, VECTOR3, "v", varray());
 	ADDFUNC1R(BASIS, VECTOR3, Basis, xform_inv, VECTOR3, "v", varray());
 	ADDFUNC0R(BASIS, INT, Basis, get_orthogonal_index, varray());
+	ADDFUNC2R(BASIS, BASIS, Basis, slerp, BASIS, "b", REAL, "t", varray());
 
 	ADDFUNC0R(TRANSFORM, TRANSFORM, Transform, inverse, varray());
 	ADDFUNC0R(TRANSFORM, TRANSFORM, Transform, affine_inverse, varray());
@@ -1787,24 +1870,67 @@ void register_variant_methods() {
 
 	_VariantCall::add_constructor(_VariantCall::Quat_init1, Variant::QUAT, "x", Variant::REAL, "y", Variant::REAL, "z", Variant::REAL, "w", Variant::REAL);
 	_VariantCall::add_constructor(_VariantCall::Quat_init2, Variant::QUAT, "axis", Variant::VECTOR3, "angle", Variant::REAL);
+	_VariantCall::add_constructor(_VariantCall::Quat_init3, Variant::QUAT, "euler", Variant::VECTOR3);
 
 	_VariantCall::add_constructor(_VariantCall::Color_init1, Variant::COLOR, "r", Variant::REAL, "g", Variant::REAL, "b", Variant::REAL, "a", Variant::REAL);
 	_VariantCall::add_constructor(_VariantCall::Color_init2, Variant::COLOR, "r", Variant::REAL, "g", Variant::REAL, "b", Variant::REAL);
 
-	_VariantCall::add_constructor(_VariantCall::Rect3_init1, Variant::RECT3, "position", Variant::VECTOR3, "size", Variant::VECTOR3);
+	_VariantCall::add_constructor(_VariantCall::AABB_init1, Variant::AABB, "position", Variant::VECTOR3, "size", Variant::VECTOR3);
 
 	_VariantCall::add_constructor(_VariantCall::Basis_init1, Variant::BASIS, "x_axis", Variant::VECTOR3, "y_axis", Variant::VECTOR3, "z_axis", Variant::VECTOR3);
 	_VariantCall::add_constructor(_VariantCall::Basis_init2, Variant::BASIS, "axis", Variant::VECTOR3, "phi", Variant::REAL);
-	_VariantCall::add_constructor(_VariantCall::Basis_init3, Variant::BASIS, "euler", Variant::VECTOR3);
 
 	_VariantCall::add_constructor(_VariantCall::Transform_init1, Variant::TRANSFORM, "x_axis", Variant::VECTOR3, "y_axis", Variant::VECTOR3, "z_axis", Variant::VECTOR3, "origin", Variant::VECTOR3);
 	_VariantCall::add_constructor(_VariantCall::Transform_init2, Variant::TRANSFORM, "basis", Variant::BASIS, "origin", Variant::VECTOR3);
 
 	/* REGISTER CONSTANTS */
 
+	_populate_named_colors();
+	for (Map<String, Color>::Element *color = _named_colors.front(); color; color = color->next()) {
+		_VariantCall::add_variant_constant(Variant::COLOR, color->key(), color->value());
+	}
+
 	_VariantCall::add_constant(Variant::VECTOR3, "AXIS_X", Vector3::AXIS_X);
 	_VariantCall::add_constant(Variant::VECTOR3, "AXIS_Y", Vector3::AXIS_Y);
 	_VariantCall::add_constant(Variant::VECTOR3, "AXIS_Z", Vector3::AXIS_Z);
+
+	_VariantCall::add_variant_constant(Variant::VECTOR3, "ZERO", Vector3(0, 0, 0));
+	_VariantCall::add_variant_constant(Variant::VECTOR3, "ONE", Vector3(1, 1, 1));
+	_VariantCall::add_variant_constant(Variant::VECTOR3, "INF", Vector3(Math_INF, Math_INF, Math_INF));
+	_VariantCall::add_variant_constant(Variant::VECTOR3, "LEFT", Vector3(-1, 0, 0));
+	_VariantCall::add_variant_constant(Variant::VECTOR3, "RIGHT", Vector3(1, 0, 0));
+	_VariantCall::add_variant_constant(Variant::VECTOR3, "UP", Vector3(0, 1, 0));
+	_VariantCall::add_variant_constant(Variant::VECTOR3, "DOWN", Vector3(0, -1, 0));
+	_VariantCall::add_variant_constant(Variant::VECTOR3, "FORWARD", Vector3(0, 0, -1));
+	_VariantCall::add_variant_constant(Variant::VECTOR3, "BACK", Vector3(0, 0, 1));
+
+	_VariantCall::add_variant_constant(Variant::VECTOR2, "ZERO", Vector2(0, 0));
+	_VariantCall::add_variant_constant(Variant::VECTOR2, "ONE", Vector2(1, 1));
+	_VariantCall::add_variant_constant(Variant::VECTOR2, "INF", Vector2(Math_INF, Math_INF));
+	_VariantCall::add_variant_constant(Variant::VECTOR2, "LEFT", Vector2(-1, 0));
+	_VariantCall::add_variant_constant(Variant::VECTOR2, "RIGHT", Vector2(1, 0));
+	_VariantCall::add_variant_constant(Variant::VECTOR2, "UP", Vector2(0, -1));
+	_VariantCall::add_variant_constant(Variant::VECTOR2, "DOWN", Vector2(0, 1));
+
+	_VariantCall::add_variant_constant(Variant::TRANSFORM2D, "IDENTITY", Transform2D(1, 0, 0, 1, 0, 0));
+	_VariantCall::add_variant_constant(Variant::TRANSFORM2D, "FLIP_X", Transform2D(-1, 0, 0, 1, 0, 0));
+	_VariantCall::add_variant_constant(Variant::TRANSFORM2D, "FLIP_Y", Transform2D(1, 0, 0, -1, 0, 0));
+
+	Transform identity_transform, transform_x, transform_y, transform_z;
+	identity_transform.set(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0);
+	_VariantCall::add_variant_constant(Variant::TRANSFORM, "IDENTITY", identity_transform);
+	transform_x.set(-1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0);
+	_VariantCall::add_variant_constant(Variant::TRANSFORM, "FLIP_X", transform_x);
+	transform_x.set(1, 0, 0, 0, -1, 0, 0, 0, 1, 0, 0, 0);
+	_VariantCall::add_variant_constant(Variant::TRANSFORM, "FLIP_Y", transform_y);
+	transform_x.set(1, 0, 0, 0, 1, 0, 0, 0, -1, 0, 0, 0);
+	_VariantCall::add_variant_constant(Variant::TRANSFORM, "FLIP_Z", transform_z);
+
+	_VariantCall::add_variant_constant(Variant::PLANE, "PLANE_YZ", Plane(Vector3(1, 0, 0), 0));
+	_VariantCall::add_variant_constant(Variant::PLANE, "PLANE_XZ", Plane(Vector3(0, 1, 0), 0));
+	_VariantCall::add_variant_constant(Variant::PLANE, "PLANE_XY", Plane(Vector3(0, 0, 1), 0));
+
+	_VariantCall::add_variant_constant(Variant::QUAT, "IDENTITY", Quat(0, 0, 0, 1));
 }
 
 void unregister_variant_methods() {

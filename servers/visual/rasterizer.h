@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2017 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2017 Godot Engine contributors (cf. AUTHORS.md)    */
+/* Copyright (c) 2007-2018 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2018 Godot Engine contributors (cf. AUTHORS.md)    */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -27,13 +27,14 @@
 /* TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE     */
 /* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                */
 /*************************************************************************/
+
 #ifndef RASTERIZER_H
 #define RASTERIZER_H
 
-#include "camera_matrix.h"
+#include "core/math/camera_matrix.h"
 #include "servers/visual_server.h"
 
-#include "self_list.h"
+#include "core/self_list.h"
 
 class RasterizerScene {
 public:
@@ -54,6 +55,7 @@ public:
 	virtual void environment_set_background(RID p_env, VS::EnvironmentBG p_bg) = 0;
 	virtual void environment_set_sky(RID p_env, RID p_sky) = 0;
 	virtual void environment_set_sky_custom_fov(RID p_env, float p_scale) = 0;
+	virtual void environment_set_sky_orientation(RID p_env, const Basis &p_orientation) = 0;
 	virtual void environment_set_bg_color(RID p_env, const Color &p_color) = 0;
 	virtual void environment_set_bg_energy(RID p_env, float p_energy) = 0;
 	virtual void environment_set_canvas_max_layer(RID p_env, int p_max_layer) = 0;
@@ -61,18 +63,18 @@ public:
 
 	virtual void environment_set_dof_blur_near(RID p_env, bool p_enable, float p_distance, float p_transition, float p_far_amount, VS::EnvironmentDOFBlurQuality p_quality) = 0;
 	virtual void environment_set_dof_blur_far(RID p_env, bool p_enable, float p_distance, float p_transition, float p_far_amount, VS::EnvironmentDOFBlurQuality p_quality) = 0;
-	virtual void environment_set_glow(RID p_env, bool p_enable, int p_level_flags, float p_intensity, float p_strength, float p_bloom_threshold, VS::EnvironmentGlowBlendMode p_blend_mode, float p_hdr_bleed_threshold, float p_hdr_bleed_scale, bool p_bicubic_upscale) = 0;
+	virtual void environment_set_glow(RID p_env, bool p_enable, int p_level_flags, float p_intensity, float p_strength, float p_bloom_threshold, VS::EnvironmentGlowBlendMode p_blend_mode, float p_hdr_bleed_threshold, float p_hdr_bleed_scale, float p_hdr_luminance_cap, bool p_bicubic_upscale) = 0;
 	virtual void environment_set_fog(RID p_env, bool p_enable, float p_begin, float p_end, RID p_gradient_texture) = 0;
 
 	virtual void environment_set_ssr(RID p_env, bool p_enable, int p_max_steps, float p_fade_int, float p_fade_out, float p_depth_tolerance, bool p_roughness) = 0;
-	virtual void environment_set_ssao(RID p_env, bool p_enable, float p_radius, float p_intensity, float p_radius2, float p_intensity2, float p_bias, float p_light_affect, const Color &p_color, VS::EnvironmentSSAOQuality p_quality, VS::EnvironmentSSAOBlur p_blur, float p_bilateral_sharpness) = 0;
+	virtual void environment_set_ssao(RID p_env, bool p_enable, float p_radius, float p_intensity, float p_radius2, float p_intensity2, float p_bias, float p_light_affect, float p_ao_channel_affect, const Color &p_color, VS::EnvironmentSSAOQuality p_quality, VS::EnvironmentSSAOBlur p_blur, float p_bilateral_sharpness) = 0;
 
 	virtual void environment_set_tonemap(RID p_env, VS::EnvironmentToneMapper p_tone_mapper, float p_exposure, float p_white, bool p_auto_exposure, float p_min_luminance, float p_max_luminance, float p_auto_exp_speed, float p_auto_exp_scale) = 0;
 
 	virtual void environment_set_adjustment(RID p_env, bool p_enable, float p_brightness, float p_contrast, float p_saturation, RID p_ramp) = 0;
 
 	virtual void environment_set_fog(RID p_env, bool p_enable, const Color &p_color, const Color &p_sun_color, float p_sun_amount) = 0;
-	virtual void environment_set_fog_depth(RID p_env, bool p_enable, float p_depth_begin, float p_depth_curve, bool p_transmit, float p_transmit_curve) = 0;
+	virtual void environment_set_fog_depth(RID p_env, bool p_enable, float p_depth_begin, float p_depth_end, float p_depth_curve, bool p_transmit, float p_transmit_curve) = 0;
 	virtual void environment_set_fog_height(RID p_env, bool p_enable, float p_min_height, float p_max_height, float p_height_curve) = 0;
 
 	virtual bool is_environment(RID p_env) = 0;
@@ -103,21 +105,25 @@ public:
 
 		VS::ShadowCastingSetting cast_shadows;
 
+		//fit in 32 bits
 		bool mirror : 8;
 		bool receive_shadows : 8;
 		bool visible : 8;
-		bool baked_light : 8; //this flag is only to know if it actually did use baked light
+		bool baked_light : 4; //this flag is only to know if it actually did use baked light
+		bool redraw_if_visible : 4;
 
 		float depth; //used for sorting
 
 		SelfList<InstanceBase> dependency_item;
 
-		virtual void base_removed() = 0;
-		virtual void base_changed() = 0;
-		virtual void base_material_changed() = 0;
+		InstanceBase *lightmap_capture;
+		RID lightmap;
+		Vector<Color> lightmap_capture_data; //in a array (12 values) to avoid wasting space if unused. Alpha is unused, but needed to send to shader
 
-		InstanceBase()
-			: dependency_item(this) {
+		virtual void base_removed() = 0;
+		virtual void base_changed(bool p_aabb, bool p_materials) = 0;
+		InstanceBase() :
+				dependency_item(this) {
 
 			base_type = VS::INSTANCE_NONE;
 			cast_shadows = VS::SHADOW_CASTING_SETTING_ON;
@@ -126,6 +132,8 @@ public:
 			depth_layer = 0;
 			layer_mask = 1;
 			baked_light = false;
+			redraw_if_visible = false;
+			lightmap_capture = NULL;
 		}
 	};
 
@@ -167,16 +175,34 @@ public:
 	/* TEXTURE API */
 
 	virtual RID texture_create() = 0;
-	virtual void texture_allocate(RID p_texture, int p_width, int p_height, Image::Format p_format, uint32_t p_flags = VS::TEXTURE_FLAGS_DEFAULT) = 0;
-	virtual void texture_set_data(RID p_texture, const Ref<Image> &p_image, VS::CubeMapSide p_cube_side = VS::CUBEMAP_LEFT) = 0;
-	virtual Ref<Image> texture_get_data(RID p_texture, VS::CubeMapSide p_cube_side = VS::CUBEMAP_LEFT) const = 0;
+	virtual void texture_allocate(RID p_texture,
+			int p_width,
+			int p_height,
+			int p_depth_3d,
+			Image::Format p_format,
+			VS::TextureType p_type,
+			uint32_t p_flags = VS::TEXTURE_FLAGS_DEFAULT) = 0;
+
+	virtual void texture_set_data(RID p_texture, const Ref<Image> &p_image, int p_level = 0) = 0;
+
+	virtual void texture_set_data_partial(RID p_texture,
+			const Ref<Image> &p_image,
+			int src_x, int src_y,
+			int src_w, int src_h,
+			int dst_x, int dst_y,
+			int p_dst_mip,
+			int p_level = 0) = 0;
+
+	virtual Ref<Image> texture_get_data(RID p_texture, int p_level = 0) const = 0;
 	virtual void texture_set_flags(RID p_texture, uint32_t p_flags) = 0;
 	virtual uint32_t texture_get_flags(RID p_texture) const = 0;
 	virtual Image::Format texture_get_format(RID p_texture) const = 0;
+	virtual VS::TextureType texture_get_type(RID p_texture) const = 0;
 	virtual uint32_t texture_get_texid(RID p_texture) const = 0;
 	virtual uint32_t texture_get_width(RID p_texture) const = 0;
 	virtual uint32_t texture_get_height(RID p_texture) const = 0;
-	virtual void texture_set_size_override(RID p_texture, int p_width, int p_height) = 0;
+	virtual uint32_t texture_get_depth(RID p_texture) const = 0;
+	virtual void texture_set_size_override(RID p_texture, int p_width, int p_height, int p_depth_3d) = 0;
 
 	virtual void texture_set_path(RID p_texture, const String &p_path) = 0;
 	virtual String texture_get_path(RID p_texture) const = 0;
@@ -192,6 +218,9 @@ public:
 	virtual void texture_set_detect_normal_callback(RID p_texture, VisualServer::TextureDetectCallback p_callback, void *p_userdata) = 0;
 
 	virtual void textures_keep_original(bool p_enable) = 0;
+
+	virtual void texture_set_proxy(RID p_proxy, RID p_base) = 0;
+	virtual void texture_set_force_redraw_if_visible(RID p_texture, bool p_enable) = 0;
 
 	/* SKY API */
 
@@ -219,6 +248,7 @@ public:
 
 	virtual void material_set_param(RID p_material, const StringName &p_param, const Variant &p_value) = 0;
 	virtual Variant material_get_param(RID p_material, const StringName &p_param) const = 0;
+	virtual Variant material_get_param_default(RID p_material, const StringName &p_param) const = 0;
 
 	virtual void material_set_line_width(RID p_material, float p_width) = 0;
 
@@ -234,7 +264,7 @@ public:
 
 	virtual RID mesh_create() = 0;
 
-	virtual void mesh_add_surface(RID p_mesh, uint32_t p_format, VS::PrimitiveType p_primitive, const PoolVector<uint8_t> &p_array, int p_vertex_count, const PoolVector<uint8_t> &p_index_array, int p_index_count, const Rect3 &p_aabb, const Vector<PoolVector<uint8_t> > &p_blend_shapes = Vector<PoolVector<uint8_t> >(), const Vector<Rect3> &p_bone_aabbs = Vector<Rect3>()) = 0;
+	virtual void mesh_add_surface(RID p_mesh, uint32_t p_format, VS::PrimitiveType p_primitive, const PoolVector<uint8_t> &p_array, int p_vertex_count, const PoolVector<uint8_t> &p_index_array, int p_index_count, const AABB &p_aabb, const Vector<PoolVector<uint8_t> > &p_blend_shapes = Vector<PoolVector<uint8_t> >(), const Vector<AABB> &p_bone_aabbs = Vector<AABB>()) = 0;
 
 	virtual void mesh_set_blend_shape_count(RID p_mesh, int p_amount) = 0;
 	virtual int mesh_get_blend_shape_count(RID p_mesh) const = 0;
@@ -256,41 +286,46 @@ public:
 	virtual uint32_t mesh_surface_get_format(RID p_mesh, int p_surface) const = 0;
 	virtual VS::PrimitiveType mesh_surface_get_primitive_type(RID p_mesh, int p_surface) const = 0;
 
-	virtual Rect3 mesh_surface_get_aabb(RID p_mesh, int p_surface) const = 0;
+	virtual AABB mesh_surface_get_aabb(RID p_mesh, int p_surface) const = 0;
 	virtual Vector<PoolVector<uint8_t> > mesh_surface_get_blend_shapes(RID p_mesh, int p_surface) const = 0;
-	virtual Vector<Rect3> mesh_surface_get_skeleton_aabb(RID p_mesh, int p_surface) const = 0;
+	virtual Vector<AABB> mesh_surface_get_skeleton_aabb(RID p_mesh, int p_surface) const = 0;
 
 	virtual void mesh_remove_surface(RID p_mesh, int p_index) = 0;
 	virtual int mesh_get_surface_count(RID p_mesh) const = 0;
 
-	virtual void mesh_set_custom_aabb(RID p_mesh, const Rect3 &p_aabb) = 0;
-	virtual Rect3 mesh_get_custom_aabb(RID p_mesh) const = 0;
+	virtual void mesh_set_custom_aabb(RID p_mesh, const AABB &p_aabb) = 0;
+	virtual AABB mesh_get_custom_aabb(RID p_mesh) const = 0;
 
-	virtual Rect3 mesh_get_aabb(RID p_mesh, RID p_skeleton) const = 0;
+	virtual AABB mesh_get_aabb(RID p_mesh, RID p_skeleton) const = 0;
+
 	virtual void mesh_clear(RID p_mesh) = 0;
 
 	/* MULTIMESH API */
 
 	virtual RID multimesh_create() = 0;
 
-	virtual void multimesh_allocate(RID p_multimesh, int p_instances, VS::MultimeshTransformFormat p_transform_format, VS::MultimeshColorFormat p_color_format) = 0;
+	virtual void multimesh_allocate(RID p_multimesh, int p_instances, VS::MultimeshTransformFormat p_transform_format, VS::MultimeshColorFormat p_color_format, VS::MultimeshCustomDataFormat p_data = VS::MULTIMESH_CUSTOM_DATA_NONE) = 0;
 	virtual int multimesh_get_instance_count(RID p_multimesh) const = 0;
 
 	virtual void multimesh_set_mesh(RID p_multimesh, RID p_mesh) = 0;
 	virtual void multimesh_instance_set_transform(RID p_multimesh, int p_index, const Transform &p_transform) = 0;
 	virtual void multimesh_instance_set_transform_2d(RID p_multimesh, int p_index, const Transform2D &p_transform) = 0;
 	virtual void multimesh_instance_set_color(RID p_multimesh, int p_index, const Color &p_color) = 0;
+	virtual void multimesh_instance_set_custom_data(RID p_multimesh, int p_index, const Color &p_color) = 0;
 
 	virtual RID multimesh_get_mesh(RID p_multimesh) const = 0;
 
 	virtual Transform multimesh_instance_get_transform(RID p_multimesh, int p_index) const = 0;
 	virtual Transform2D multimesh_instance_get_transform_2d(RID p_multimesh, int p_index) const = 0;
 	virtual Color multimesh_instance_get_color(RID p_multimesh, int p_index) const = 0;
+	virtual Color multimesh_instance_get_custom_data(RID p_multimesh, int p_index) const = 0;
+
+	virtual void multimesh_set_as_bulk_array(RID p_multimesh, const PoolVector<float> &p_array) = 0;
 
 	virtual void multimesh_set_visible_instances(RID p_multimesh, int p_visible) = 0;
 	virtual int multimesh_get_visible_instances(RID p_multimesh) const = 0;
 
-	virtual Rect3 multimesh_get_aabb(RID p_multimesh) const = 0;
+	virtual AABB multimesh_get_aabb(RID p_multimesh) const = 0;
 
 	/* IMMEDIATE API */
 
@@ -306,7 +341,7 @@ public:
 	virtual void immediate_clear(RID p_immediate) = 0;
 	virtual void immediate_set_material(RID p_immediate, RID p_material) = 0;
 	virtual RID immediate_get_material(RID p_immediate) const = 0;
-	virtual Rect3 immediate_get_aabb(RID p_immediate) const = 0;
+	virtual AABB immediate_get_aabb(RID p_immediate) const = 0;
 
 	/* SKELETON API */
 
@@ -317,6 +352,7 @@ public:
 	virtual Transform skeleton_bone_get_transform(RID p_skeleton, int p_bone) const = 0;
 	virtual void skeleton_bone_set_transform_2d(RID p_skeleton, int p_bone, const Transform2D &p_transform) = 0;
 	virtual Transform2D skeleton_bone_get_transform_2d(RID p_skeleton, int p_bone) const = 0;
+	virtual void skeleton_set_base_transform_2d(RID p_skeleton, const Transform2D &p_base_transform) = 0;
 
 	/* Light API */
 
@@ -350,7 +386,7 @@ public:
 	virtual bool light_has_shadow(RID p_light) const = 0;
 
 	virtual VS::LightType light_get_type(RID p_light) const = 0;
-	virtual Rect3 light_get_aabb(RID p_light) const = 0;
+	virtual AABB light_get_aabb(RID p_light) const = 0;
 	virtual float light_get_param(RID p_light, VS::LightParam p_param) = 0;
 	virtual Color light_get_color(RID p_light) = 0;
 	virtual uint64_t light_get_version(RID p_light) const = 0;
@@ -360,6 +396,7 @@ public:
 	virtual RID reflection_probe_create() = 0;
 
 	virtual void reflection_probe_set_update_mode(RID p_probe, VS::ReflectionProbeUpdateMode p_mode) = 0;
+	virtual void reflection_probe_set_resolution(RID p_probe, int p_resolution) = 0;
 	virtual void reflection_probe_set_intensity(RID p_probe, float p_intensity) = 0;
 	virtual void reflection_probe_set_interior_ambient(RID p_probe, const Color &p_ambient) = 0;
 	virtual void reflection_probe_set_interior_ambient_energy(RID p_probe, float p_energy) = 0;
@@ -372,7 +409,7 @@ public:
 	virtual void reflection_probe_set_enable_shadows(RID p_probe, bool p_enable) = 0;
 	virtual void reflection_probe_set_cull_mask(RID p_probe, uint32_t p_layers) = 0;
 
-	virtual Rect3 reflection_probe_get_aabb(RID p_probe) const = 0;
+	virtual AABB reflection_probe_get_aabb(RID p_probe) const = 0;
 	virtual VS::ReflectionProbeUpdateMode reflection_probe_get_update_mode(RID p_probe) const = 0;
 	virtual uint32_t reflection_probe_get_cull_mask(RID p_probe) const = 0;
 	virtual Vector3 reflection_probe_get_extents(RID p_probe) const = 0;
@@ -390,8 +427,8 @@ public:
 
 	virtual RID gi_probe_create() = 0;
 
-	virtual void gi_probe_set_bounds(RID p_probe, const Rect3 &p_bounds) = 0;
-	virtual Rect3 gi_probe_get_bounds(RID p_probe) const = 0;
+	virtual void gi_probe_set_bounds(RID p_probe, const AABB &p_bounds) = 0;
+	virtual AABB gi_probe_get_bounds(RID p_probe) const = 0;
 
 	virtual void gi_probe_set_cell_size(RID p_probe, float p_range) = 0;
 	virtual float gi_probe_get_cell_size(RID p_probe) const = 0;
@@ -435,18 +472,46 @@ public:
 	virtual RID gi_probe_dynamic_data_create(int p_width, int p_height, int p_depth, GIProbeCompression p_compression) = 0;
 	virtual void gi_probe_dynamic_data_update(RID p_gi_probe_data, int p_depth_slice, int p_slice_count, int p_mipmap, const void *p_data) = 0;
 
+	/* LIGHTMAP CAPTURE */
+
+	struct LightmapCaptureOctree {
+
+		enum {
+			CHILD_EMPTY = 0xFFFFFFFF
+		};
+
+		uint16_t light[6][3]; //anisotropic light
+		float alpha;
+		uint32_t children[8];
+	};
+
+	virtual RID lightmap_capture_create() = 0;
+	virtual void lightmap_capture_set_bounds(RID p_capture, const AABB &p_bounds) = 0;
+	virtual AABB lightmap_capture_get_bounds(RID p_capture) const = 0;
+	virtual void lightmap_capture_set_octree(RID p_capture, const PoolVector<uint8_t> &p_octree) = 0;
+	virtual PoolVector<uint8_t> lightmap_capture_get_octree(RID p_capture) const = 0;
+	virtual void lightmap_capture_set_octree_cell_transform(RID p_capture, const Transform &p_xform) = 0;
+	virtual Transform lightmap_capture_get_octree_cell_transform(RID p_capture) const = 0;
+	virtual void lightmap_capture_set_octree_cell_subdiv(RID p_capture, int p_subdiv) = 0;
+	virtual int lightmap_capture_get_octree_cell_subdiv(RID p_capture) const = 0;
+	virtual void lightmap_capture_set_energy(RID p_capture, float p_energy) = 0;
+	virtual float lightmap_capture_get_energy(RID p_capture) const = 0;
+	virtual const PoolVector<LightmapCaptureOctree> *lightmap_capture_get_octree_ptr(RID p_capture) const = 0;
+
 	/* PARTICLES */
 
 	virtual RID particles_create() = 0;
 
 	virtual void particles_set_emitting(RID p_particles, bool p_emitting) = 0;
+	virtual bool particles_get_emitting(RID p_particles) = 0;
+
 	virtual void particles_set_amount(RID p_particles, int p_amount) = 0;
 	virtual void particles_set_lifetime(RID p_particles, float p_lifetime) = 0;
 	virtual void particles_set_one_shot(RID p_particles, bool p_one_shot) = 0;
 	virtual void particles_set_pre_process_time(RID p_particles, float p_time) = 0;
 	virtual void particles_set_explosiveness_ratio(RID p_particles, float p_ratio) = 0;
 	virtual void particles_set_randomness_ratio(RID p_particles, float p_ratio) = 0;
-	virtual void particles_set_custom_aabb(RID p_particles, const Rect3 &p_aabb) = 0;
+	virtual void particles_set_custom_aabb(RID p_particles, const AABB &p_aabb) = 0;
 	virtual void particles_set_speed_scale(RID p_particles, float p_scale) = 0;
 	virtual void particles_set_use_local_coordinates(RID p_particles, bool p_enable) = 0;
 	virtual void particles_set_process_material(RID p_particles, RID p_material) = 0;
@@ -454,14 +519,16 @@ public:
 	virtual void particles_set_fractional_delta(RID p_particles, bool p_enable) = 0;
 	virtual void particles_restart(RID p_particles) = 0;
 
+	virtual bool particles_is_inactive(RID p_particles) const = 0;
+
 	virtual void particles_set_draw_order(RID p_particles, VS::ParticlesDrawOrder p_order) = 0;
 
 	virtual void particles_set_draw_passes(RID p_particles, int p_count) = 0;
 	virtual void particles_set_draw_pass_mesh(RID p_particles, int p_pass, RID p_mesh) = 0;
 
 	virtual void particles_request_process(RID p_particles) = 0;
-	virtual Rect3 particles_get_current_aabb(RID p_particles) = 0;
-	virtual Rect3 particles_get_aabb(RID p_particles) const = 0;
+	virtual AABB particles_get_current_aabb(RID p_particles) = 0;
+	virtual AABB particles_get_aabb(RID p_particles) const = 0;
 
 	virtual void particles_set_emission_transform(RID p_particles, const Transform &p_transform) = 0;
 
@@ -477,6 +544,7 @@ public:
 		RENDER_TARGET_NO_3D,
 		RENDER_TARGET_NO_SAMPLING,
 		RENDER_TARGET_HDR,
+		RENDER_TARGET_KEEP_3D_LINEAR,
 		RENDER_TARGET_FLAG_MAX
 	};
 
@@ -634,6 +702,7 @@ public:
 		struct CommandPolyLine : public Command {
 
 			bool antialiased;
+			bool multiline;
 			Vector<Point2> triangles;
 			Vector<Color> triangle_colors;
 			Vector<Point2> lines;
@@ -641,6 +710,7 @@ public:
 			CommandPolyLine() {
 				type = TYPE_POLYLINE;
 				antialiased = false;
+				multiline = false;
 			}
 		};
 
@@ -697,6 +767,8 @@ public:
 			Vector<Point2> points;
 			Vector<Point2> uvs;
 			Vector<Color> colors;
+			Vector<int> bones;
+			Vector<float> weights;
 			RID texture;
 			RID normal_map;
 			int count;
@@ -711,14 +783,16 @@ public:
 		struct CommandMesh : public Command {
 
 			RID mesh;
-			RID skeleton;
+			RID texture;
+			RID normal_map;
 			CommandMesh() { type = TYPE_MESH; }
 		};
 
 		struct CommandMultiMesh : public Command {
 
 			RID multimesh;
-			RID skeleton;
+			RID texture;
+			RID normal_map;
 			CommandMultiMesh() { type = TYPE_MULTIMESH; }
 		};
 
@@ -727,8 +801,6 @@ public:
 			RID particles;
 			RID texture;
 			RID normal_map;
-			int h_frames;
-			int v_frames;
 			CommandParticles() { type = TYPE_PARTICLES; }
 		};
 
@@ -765,6 +837,7 @@ public:
 		bool clip;
 		bool visible;
 		bool behind;
+		bool update_when_visible;
 		//VS::MaterialBlendMode blend_mode;
 		int light_mask;
 		Vector<Command *> commands;
@@ -772,6 +845,8 @@ public:
 		mutable bool rect_dirty;
 		mutable Rect2 rect;
 		RID material;
+		RID skeleton;
+
 		Item *next;
 
 		struct CopyBackBuffer {
@@ -882,7 +957,7 @@ public:
 					case Item::Command::TYPE_MESH: {
 
 						const Item::CommandMesh *mesh = static_cast<const Item::CommandMesh *>(c);
-						Rect3 aabb = RasterizerStorage::base_singleton->mesh_get_aabb(mesh->mesh, mesh->skeleton);
+						AABB aabb = RasterizerStorage::base_singleton->mesh_get_aabb(mesh->mesh, RID());
 
 						r = Rect2(aabb.position.x, aabb.position.y, aabb.size.x, aabb.size.y);
 
@@ -890,7 +965,7 @@ public:
 					case Item::Command::TYPE_MULTIMESH: {
 
 						const Item::CommandMultiMesh *multimesh = static_cast<const Item::CommandMultiMesh *>(c);
-						Rect3 aabb = RasterizerStorage::base_singleton->multimesh_get_aabb(multimesh->multimesh);
+						AABB aabb = RasterizerStorage::base_singleton->multimesh_get_aabb(multimesh->multimesh);
 
 						r = Rect2(aabb.position.x, aabb.position.y, aabb.size.x, aabb.size.y);
 
@@ -899,7 +974,7 @@ public:
 
 						const Item::CommandParticles *particles_cmd = static_cast<const Item::CommandParticles *>(c);
 						if (particles_cmd->particles.is_valid()) {
-							Rect3 aabb = RasterizerStorage::base_singleton->particles_get_aabb(particles_cmd->particles);
+							AABB aabb = RasterizerStorage::base_singleton->particles_get_aabb(particles_cmd->particles);
 							r = Rect2(aabb.position.x, aabb.position.y, aabb.size.x, aabb.size.y);
 						}
 
@@ -964,6 +1039,7 @@ public:
 			copy_back_buffer = NULL;
 			distance_field = false;
 			light_masked = false;
+			update_when_visible = false;
 		}
 		virtual ~Item() {
 			clear();
@@ -974,7 +1050,7 @@ public:
 	virtual void canvas_begin() = 0;
 	virtual void canvas_end() = 0;
 
-	virtual void canvas_render_items(Item *p_item_list, int p_z, const Color &p_modulate, Light *p_light) = 0;
+	virtual void canvas_render_items(Item *p_item_list, int p_z, const Color &p_modulate, Light *p_light, const Transform2D &p_base_transform) = 0;
 	virtual void canvas_debug_viewport_shadows(Light *p_lights_with_shadow) = 0;
 
 	struct LightOccluderInstance : public RID_Data {
@@ -1022,13 +1098,16 @@ public:
 	virtual void set_boot_image(const Ref<Image> &p_image, const Color &p_color, bool p_scale) = 0;
 
 	virtual void initialize() = 0;
-	virtual void begin_frame() = 0;
+	virtual void begin_frame(double frame_step) = 0;
 	virtual void set_current_render_target(RID p_render_target) = 0;
 	virtual void restore_render_target() = 0;
 	virtual void clear_render_target(const Color &p_color) = 0;
 	virtual void blit_render_target_to_screen(RID p_render_target, const Rect2 &p_screen_rect, int p_screen = 0) = 0;
-	virtual void end_frame() = 0;
+	virtual void output_lens_distorted_to_screen(RID p_render_target, const Rect2 &p_screen_rect, float p_k1, float p_k2, const Vector2 &p_eye_center, float p_oversample) = 0;
+	virtual void end_frame(bool p_swap_buffers) = 0;
 	virtual void finalize() = 0;
+
+	virtual bool is_low_end() const = 0;
 
 	virtual ~Rasterizer() {}
 };

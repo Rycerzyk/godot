@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2017 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2017 Godot Engine contributors (cf. AUTHORS.md)    */
+/* Copyright (c) 2007-2018 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2018 Godot Engine contributors (cf. AUTHORS.md)    */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -27,10 +27,11 @@
 /* TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE     */
 /* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                */
 /*************************************************************************/
-#ifndef Sky_H
-#define Sky_H
 
-#include "os/thread.h"
+#ifndef SKY_BOX_H
+#define SKY_BOX_H
+
+#include "core/os/thread.h"
 #include "scene/resources/texture.h"
 class Sky : public Resource {
 	GDCLASS(Sky, Resource);
@@ -195,4 +196,4 @@ public:
 
 VARIANT_ENUM_CAST(ProceduralSky::TextureSize)
 
-#endif // Sky_H
+#endif // SKY_BOX_H

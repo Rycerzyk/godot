@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2017 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2017 Godot Engine contributors (cf. AUTHORS.md)    */
+/* Copyright (c) 2007-2018 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2018 Godot Engine contributors (cf. AUTHORS.md)    */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -27,11 +27,12 @@
 /* TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE     */
 /* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                */
 /*************************************************************************/
+
 #include "test_gdscript.h"
 
-#include "os/file_access.h"
-#include "os/main_loop.h"
-#include "os/os.h"
+#include "core/os/file_access.h"
+#include "core/os/main_loop.h"
+#include "core/os/os.h"
 
 #ifdef GDSCRIPT_ENABLED
 
@@ -191,14 +192,6 @@ static String _parser_expr(const GDScriptParser::Node *p_expr) {
 				} break;
 				case GDScriptParser::OperatorNode::OP_BIT_INVERT: {
 					txt = "~" + _parser_expr(c_node->arguments[0]);
-				} break;
-				case GDScriptParser::OperatorNode::OP_PREINC: {
-				} break;
-				case GDScriptParser::OperatorNode::OP_PREDEC: {
-				} break;
-				case GDScriptParser::OperatorNode::OP_INC: {
-				} break;
-				case GDScriptParser::OperatorNode::OP_DEC: {
 				} break;
 				case GDScriptParser::OperatorNode::OP_IN: {
 					txt = _parser_expr(c_node->arguments[0]) + " in " + _parser_expr(c_node->arguments[1]);
@@ -364,6 +357,9 @@ static void _parser_show_block(const GDScriptParser::BlockNode *p_block, int p_i
 						_parser_show_block(cf_node->body, p_indent + 1);
 
 					} break;
+					case GDScriptParser::ControlFlowNode::CF_MATCH: {
+						// FIXME: Implement
+					} break;
 					case GDScriptParser::ControlFlowNode::CF_SWITCH: {
 
 					} break;
@@ -454,10 +450,9 @@ static void _parser_show_class(const GDScriptParser::ClassNode *p_class, int p_i
 		print_line("\n");
 	}
 
-	for (int i = 0; i < p_class->constant_expressions.size(); i++) {
-
-		const GDScriptParser::ClassNode::Constant &constant = p_class->constant_expressions[i];
-		_print_indent(p_indent, "const " + String(constant.identifier) + "=" + _parser_expr(constant.expression));
+	for (Map<StringName, GDScriptParser::ClassNode::Constant>::Element *E = p_class->constant_expressions.front(); E; E = E->next()) {
+		const GDScriptParser::ClassNode::Constant &constant = E->get();
+		_print_indent(p_indent, "const " + String(E->key()) + "=" + _parser_expr(constant.expression));
 	}
 
 	for (int i = 0; i < p_class->variables.size(); i++) {
@@ -932,8 +927,8 @@ MainLoop *test(TestType p_type) {
 	Vector<uint8_t> buf;
 	int flen = fa->get_len();
 	buf.resize(fa->get_len() + 1);
-	fa->get_buffer(&buf[0], flen);
-	buf[flen] = 0;
+	fa->get_buffer(buf.ptrw(), flen);
+	buf.write[flen] = 0;
 
 	String code;
 	code.parse_utf8((const char *)&buf[0]);
@@ -1057,7 +1052,7 @@ MainLoop *test(TestType p_type) {
 
 	return NULL;
 }
-}
+} // namespace TestGDScript
 
 #else
 
@@ -1067,6 +1062,6 @@ MainLoop *test(TestType p_type) {
 
 	return NULL;
 }
-}
+} // namespace TestGDScript
 
 #endif

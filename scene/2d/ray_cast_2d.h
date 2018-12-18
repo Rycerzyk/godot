@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2017 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2017 Godot Engine contributors (cf. AUTHORS.md)    */
+/* Copyright (c) 2007-2018 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2018 Godot Engine contributors (cf. AUTHORS.md)    */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -27,6 +27,7 @@
 /* TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE     */
 /* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                */
 /*************************************************************************/
+
 #ifndef RAY_CAST_2D_H
 #define RAY_CAST_2D_H
 
@@ -44,10 +45,12 @@ class RayCast2D : public Node2D {
 	Vector2 collision_normal;
 	Set<RID> exclude;
 	uint32_t collision_mask;
-	uint32_t type_mask;
 	bool exclude_parent_body;
 
 	Vector2 cast_to;
+
+	bool collide_with_areas;
+	bool collide_with_bodies;
 
 protected:
 	void _notification(int p_what);
@@ -55,6 +58,12 @@ protected:
 	static void _bind_methods();
 
 public:
+	void set_collide_with_areas(bool p_clip);
+	bool is_collide_with_areas_enabled() const;
+
+	void set_collide_with_bodies(bool p_clip);
+	bool is_collide_with_bodies_enabled() const;
+
 	void set_enabled(bool p_enabled);
 	bool is_enabled() const;
 
@@ -66,9 +75,6 @@ public:
 
 	void set_collision_mask_bit(int p_bit, bool p_value);
 	bool get_collision_mask_bit(int p_bit) const;
-
-	void set_type_mask(uint32_t p_mask);
-	uint32_t get_type_mask() const;
 
 	void set_exclude_parent_body(bool p_exclude_parent_body);
 	bool get_exclude_parent_body() const;

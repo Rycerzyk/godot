@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2017 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2017 Godot Engine contributors (cf. AUTHORS.md)    */
+/* Copyright (c) 2007-2018 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2018 Godot Engine contributors (cf. AUTHORS.md)    */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -27,11 +27,12 @@
 /* TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE     */
 /* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                */
 /*************************************************************************/
+
 #include "doc_dump.h"
 
-#include "os/file_access.h"
+#include "core/os/file_access.h"
+#include "core/version.h"
 #include "scene/main/node.h"
-#include "version.h"
 
 static void _write_string(FileAccess *f, int p_tablevel, const String &p_string) {
 
@@ -82,7 +83,7 @@ void DocDump::dump(const String &p_file) {
 	FileAccess *f = FileAccess::open(p_file, FileAccess::WRITE);
 
 	_write_string(f, 0, "<?xml version=\"1.0\" encoding=\"UTF-8\" ?>");
-	_write_string(f, 0, String("<doc version=\"") + _MKSTR(VERSION_MAJOR) + "." + _MKSTR(VERSION_MINOR) + "-" + _MKSTR(VERSION_STATUS) + "\" name=\"Engine Types\">");
+	_write_string(f, 0, String("<doc version=\"") + VERSION_NUMBER + "\" name=\"Engine Types\">");
 
 	while (class_list.size()) {
 
@@ -141,7 +142,7 @@ void DocDump::dump(const String &p_file) {
 					if (arginfo.hint == PROPERTY_HINT_RESOURCE_TYPE)
 						type_name = arginfo.hint_string;
 					else if (arginfo.type == Variant::NIL)
-						type_name = "var";
+						type_name = "Variant";
 					else
 						type_name = Variant::get_type_name(arginfo.type);
 
@@ -182,7 +183,7 @@ void DocDump::dump(const String &p_file) {
 							case Variant::VECTOR3:
 							case Variant::PLANE:
 							case Variant::QUAT:
-							case Variant::RECT3:
+							case Variant::AABB:
 							case Variant::BASIS:
 							case Variant::COLOR:
 							case Variant::POOL_BYTE_ARRAY:
@@ -222,7 +223,7 @@ void DocDump::dump(const String &p_file) {
 						hint = "Values: ";
 						for (int j = 0; j < arginfo.hint_string.get_slice_count(","); j++) {
 							if (j > 0) hint += ", ";
-							hint += arginfo.hint_string.get_slice(",", j) + "=" + itos(1 << j);
+							hint += arginfo.hint_string.get_slice(",", j) + "=" + itos((uint64_t)1 << j);
 						}
 						break;
 					case PROPERTY_HINT_FILE: hint = "A file:"; break;

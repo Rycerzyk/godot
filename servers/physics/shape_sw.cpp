@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2017 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2017 Godot Engine contributors (cf. AUTHORS.md)    */
+/* Copyright (c) 2007-2018 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2018 Godot Engine contributors (cf. AUTHORS.md)    */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -27,17 +27,18 @@
 /* TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE     */
 /* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                */
 /*************************************************************************/
+
 #include "shape_sw.h"
 
-#include "geometry.h"
-#include "quick_hull.h"
-#include "sort.h"
+#include "core/math/geometry.h"
+#include "core/math/quick_hull.h"
+#include "core/sort.h"
 
 #define _POINT_SNAP 0.001953125
 #define _EDGE_IS_VALID_SUPPORT_THRESHOLD 0.0002
 #define _FACE_IS_VALID_SUPPORT_THRESHOLD 0.9998
 
-void ShapeSW::configure(const Rect3 &p_aabb) {
+void ShapeSW::configure(const AABB &p_aabb) {
 	aabb = p_aabb;
 	configured = true;
 	for (Map<ShapeOwnerSW *, int>::Element *E = owners.front(); E; E = E->next()) {
@@ -141,7 +142,7 @@ Vector3 PlaneShapeSW::get_moment_of_inertia(real_t p_mass) const {
 void PlaneShapeSW::_setup(const Plane &p_plane) {
 
 	plane = p_plane;
-	configure(Rect3(Vector3(-1e4, -1e4, -1e4), Vector3(1e4 * 2, 1e4 * 2, 1e4 * 2)));
+	configure(AABB(Vector3(-1e4, -1e4, -1e4), Vector3(1e4 * 2, 1e4 * 2, 1e4 * 2)));
 }
 
 void PlaneShapeSW::set_data(const Variant &p_data) {
@@ -162,6 +163,10 @@ PlaneShapeSW::PlaneShapeSW() {
 real_t RayShapeSW::get_length() const {
 
 	return length;
+}
+
+bool RayShapeSW::get_slips_on_slope() const {
+	return slips_on_slope;
 }
 
 void RayShapeSW::project_range(const Vector3 &p_normal, const Transform &p_transform, real_t &r_min, real_t &r_max) const {
@@ -220,25 +225,31 @@ Vector3 RayShapeSW::get_moment_of_inertia(real_t p_mass) const {
 	return Vector3();
 }
 
-void RayShapeSW::_setup(real_t p_length) {
+void RayShapeSW::_setup(real_t p_length, bool p_slips_on_slope) {
 
 	length = p_length;
-	configure(Rect3(Vector3(0, 0, 0), Vector3(0.1, 0.1, length)));
+	slips_on_slope = p_slips_on_slope;
+	configure(AABB(Vector3(0, 0, 0), Vector3(0.1, 0.1, length)));
 }
 
 void RayShapeSW::set_data(const Variant &p_data) {
 
-	_setup(p_data);
+	Dictionary d = p_data;
+	_setup(d["length"], d["slips_on_slope"]);
 }
 
 Variant RayShapeSW::get_data() const {
 
-	return length;
+	Dictionary d;
+	d["length"] = length;
+	d["slips_on_slope"] = slips_on_slope;
+	return d;
 }
 
 RayShapeSW::RayShapeSW() {
 
 	length = 1;
+	slips_on_slope = false;
 }
 
 /********** SPHERE *************/
@@ -299,7 +310,7 @@ Vector3 SphereShapeSW::get_moment_of_inertia(real_t p_mass) const {
 void SphereShapeSW::_setup(real_t p_radius) {
 
 	radius = p_radius;
-	configure(Rect3(Vector3(-radius, -radius, -radius), Vector3(radius * 2.0, radius * 2.0, radius * 2.0)));
+	configure(AABB(Vector3(-radius, -radius, -radius), Vector3(radius * 2.0, radius * 2.0, radius * 2.0)));
 }
 
 void SphereShapeSW::set_data(const Variant &p_data) {
@@ -430,7 +441,7 @@ void BoxShapeSW::get_supports(const Vector3 &p_normal, int p_max, Vector3 *r_sup
 
 bool BoxShapeSW::intersect_segment(const Vector3 &p_begin, const Vector3 &p_end, Vector3 &r_result, Vector3 &r_normal) const {
 
-	Rect3 aabb(-half_extents, half_extents * 2.0);
+	AABB aabb(-half_extents, half_extents * 2.0);
 
 	return aabb.intersects_segment(p_begin, p_end, &r_result, &r_normal);
 }
@@ -504,7 +515,7 @@ void BoxShapeSW::_setup(const Vector3 &p_half_extents) {
 
 	half_extents = p_half_extents.abs();
 
-	configure(Rect3(-half_extents, half_extents * 2));
+	configure(AABB(-half_extents, half_extents * 2));
 }
 
 void BoxShapeSW::set_data(const Variant &p_data) {
@@ -671,7 +682,7 @@ Vector3 CapsuleShapeSW::get_closest_point_to(const Vector3 &p_point) const {
 
 Vector3 CapsuleShapeSW::get_moment_of_inertia(real_t p_mass) const {
 
-	// use crappy AABB approximation
+	// use bad AABB approximation
 	Vector3 extents = get_aabb().size * 0.5;
 
 	return Vector3(
@@ -684,7 +695,7 @@ void CapsuleShapeSW::_setup(real_t p_height, real_t p_radius) {
 
 	height = p_height;
 	radius = p_radius;
-	configure(Rect3(Vector3(-radius, -radius, -height * 0.5 - radius), Vector3(radius * 2, radius * 2, height + radius * 2.0)));
+	configure(AABB(Vector3(-radius, -radius, -height * 0.5 - radius), Vector3(radius * 2, radius * 2, height + radius * 2.0)));
 }
 
 void CapsuleShapeSW::set_data(const Variant &p_data) {
@@ -942,7 +953,7 @@ Vector3 ConvexPolygonShapeSW::get_closest_point_to(const Vector3 &p_point) const
 
 Vector3 ConvexPolygonShapeSW::get_moment_of_inertia(real_t p_mass) const {
 
-	// use crappy AABB approximation
+	// use bad AABB approximation
 	Vector3 extents = get_aabb().size * 0.5;
 
 	return Vector3(
@@ -957,7 +968,7 @@ void ConvexPolygonShapeSW::_setup(const Vector<Vector3> &p_vertices) {
 	if (err != OK)
 		ERR_PRINT("Failed to build QuickHull");
 
-	Rect3 _aabb;
+	AABB _aabb;
 
 	for (int i = 0; i < mesh.vertices.size(); i++) {
 
@@ -1036,7 +1047,7 @@ void FaceShapeSW::get_supports(const Vector3 &p_normal, int p_max, Vector3 *r_su
 	/** FIND SUPPORT VERTEX **/
 
 	int vert_support_idx = -1;
-	real_t support_max;
+	real_t support_max = 0;
 
 	for (int i = 0; i < 3; i++) {
 
@@ -1102,7 +1113,7 @@ Vector3 FaceShapeSW::get_moment_of_inertia(real_t p_mass) const {
 
 FaceShapeSW::FaceShapeSW() {
 
-	configure(Rect3());
+	configure(AABB());
 }
 
 PoolVector<Vector3> ConcavePolygonShapeSW::get_faces() const {
@@ -1300,13 +1311,13 @@ void ConcavePolygonShapeSW::_cull(int p_idx, _CullParams *p_params) const {
 	}
 }
 
-void ConcavePolygonShapeSW::cull(const Rect3 &p_local_aabb, Callback p_callback, void *p_userdata) const {
+void ConcavePolygonShapeSW::cull(const AABB &p_local_aabb, Callback p_callback, void *p_userdata) const {
 
 	// make matrix local to concave
 	if (faces.size() == 0)
 		return;
 
-	Rect3 local_aabb = p_local_aabb;
+	AABB local_aabb = p_local_aabb;
 
 	// unlock data
 	PoolVector<Face>::Read fr = faces.read();
@@ -1330,7 +1341,7 @@ void ConcavePolygonShapeSW::cull(const Rect3 &p_local_aabb, Callback p_callback,
 
 Vector3 ConcavePolygonShapeSW::get_moment_of_inertia(real_t p_mass) const {
 
-	// use crappy AABB approximation
+	// use bad AABB approximation
 	Vector3 extents = get_aabb().size * 0.5;
 
 	return Vector3(
@@ -1341,7 +1352,7 @@ Vector3 ConcavePolygonShapeSW::get_moment_of_inertia(real_t p_mass) const {
 
 struct _VolumeSW_BVH_Element {
 
-	Rect3 aabb;
+	AABB aabb;
 	Vector3 center;
 	int face_index;
 };
@@ -1372,7 +1383,7 @@ struct _VolumeSW_BVH_CompareZ {
 
 struct _VolumeSW_BVH {
 
-	Rect3 aabb;
+	AABB aabb;
 	_VolumeSW_BVH *left;
 	_VolumeSW_BVH *right;
 
@@ -1396,7 +1407,7 @@ _VolumeSW_BVH *_volume_sw_build_bvh(_VolumeSW_BVH_Element *p_elements, int p_siz
 		bvh->face_index = -1;
 	}
 
-	Rect3 aabb;
+	AABB aabb;
 	for (int i = 0; i < p_size; i++) {
 
 		if (i == 0)
@@ -1467,7 +1478,7 @@ void ConcavePolygonShapeSW::_setup(PoolVector<Vector3> p_faces) {
 
 	int src_face_count = p_faces.size();
 	if (src_face_count == 0) {
-		configure(Rect3());
+		configure(AABB());
 		return;
 	}
 	ERR_FAIL_COND(src_face_count % 3);
@@ -1491,7 +1502,7 @@ void ConcavePolygonShapeSW::_setup(PoolVector<Vector3> p_faces) {
 	PoolVector<Vector3>::Write vw = vertices.write();
 	Vector3 *verticesw = vw.ptr();
 
-	Rect3 _aabb;
+	AABB _aabb;
 
 	for (int i = 0; i < src_face_count; i++) {
 
@@ -1588,12 +1599,12 @@ Vector3 HeightMapShapeSW::get_closest_point_to(const Vector3 &p_point) const {
 	return Vector3();
 }
 
-void HeightMapShapeSW::cull(const Rect3 &p_local_aabb, Callback p_callback, void *p_userdata) const {
+void HeightMapShapeSW::cull(const AABB &p_local_aabb, Callback p_callback, void *p_userdata) const {
 }
 
 Vector3 HeightMapShapeSW::get_moment_of_inertia(real_t p_mass) const {
 
-	// use crappy AABB approximation
+	// use bad AABB approximation
 	Vector3 extents = get_aabb().size * 0.5;
 
 	return Vector3(
@@ -1611,7 +1622,7 @@ void HeightMapShapeSW::_setup(PoolVector<real_t> p_heights, int p_width, int p_d
 
 	PoolVector<real_t>::Read r = heights.read();
 
-	Rect3 aabb;
+	AABB aabb;
 
 	for (int i = 0; i < depth; i++) {
 

@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2017 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2017 Godot Engine contributors (cf. AUTHORS.md)    */
+/* Copyright (c) 2007-2018 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2018 Godot Engine contributors (cf. AUTHORS.md)    */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -27,16 +27,17 @@
 /* TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE     */
 /* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                */
 /*************************************************************************/
+
 #include "editor_file_server.h"
 
 #include "../editor_settings.h"
-#include "io/marshalls.h"
-#include "io/marshalls.h"
+#include "core/io/marshalls.h"
 
 //#define DEBUG_PRINT(m_p) print_line(m_p)
-#define DEBUG_TIME(m_what) printf("MS: %s - %lu\n", m_what, OS::get_singleton()->get_ticks_usec());
+//#define DEBUG_TIME(m_what) printf("MS: %s - %lu\n", m_what, OS::get_singleton()->get_ticks_usec());
 
-//#define DEBUG_TIME(m_what)
+#define DEBUG_PRINT(m_what)
+#define DEBUG_TIME(m_what)
 
 void EditorFileServer::_close_client(ClientData *cd) {
 
@@ -55,7 +56,7 @@ void EditorFileServer::_subthread_start(void *s) {
 
 	ClientData *cd = (ClientData *)s;
 
-	cd->connection->set_nodelay(true);
+	cd->connection->set_no_delay(true);
 	uint8_t buf4[8];
 	Error err = cd->connection->get_data(buf4, 4);
 	if (err != OK) {
@@ -78,7 +79,7 @@ void EditorFileServer::_subthread_start(void *s) {
 			_close_client(cd);
 			ERR_FAIL_COND(err != OK);
 		}
-		passutf8[passlen] = 0;
+		passutf8.write[passlen] = 0;
 		String s;
 		s.parse_utf8(passutf8.ptr());
 		if (s != cd->efs->password) {
@@ -107,7 +108,6 @@ void EditorFileServer::_subthread_start(void *s) {
 
 		//wait for ID
 		err = cd->connection->get_data(buf4, 4);
-		//#define DEBUG_PRINT(m_p) print_line(m_p)
 		DEBUG_TIME("get_data")
 
 		if (err != OK) {
@@ -145,18 +145,18 @@ void EditorFileServer::_subthread_start(void *s) {
 					_close_client(cd);
 					ERR_FAIL_COND(err != OK);
 				}
-				fileutf8[namelen] = 0;
+				fileutf8.write[namelen] = 0;
 				String s;
 				s.parse_utf8(fileutf8.ptr());
 
 				if (cmd == FileAccessNetwork::COMMAND_FILE_EXISTS) {
-					print_line("FILE EXISTS: " + s);
+					print_verbose("FILE EXISTS: " + s);
 				}
 				if (cmd == FileAccessNetwork::COMMAND_GET_MODTIME) {
-					print_line("MOD TIME: " + s);
+					print_verbose("MOD TIME: " + s);
 				}
 				if (cmd == FileAccessNetwork::COMMAND_OPEN_FILE) {
-					print_line("OPEN: " + s);
+					print_verbose("OPEN: " + s);
 				}
 
 				if (!s.begins_with("res://")) {
@@ -240,10 +240,10 @@ void EditorFileServer::_subthread_start(void *s) {
 				cd->files[id]->seek(offset);
 				Vector<uint8_t> buf;
 				buf.resize(blocklen);
-				int read = cd->files[id]->get_buffer(buf.ptr(), blocklen);
+				int read = cd->files[id]->get_buffer(buf.ptrw(), blocklen);
 				ERR_CONTINUE(read < 0);
 
-				print_line("GET BLOCK - offset: " + itos(offset) + ", blocklen: " + itos(blocklen));
+				print_verbose("GET BLOCK - offset: " + itos(offset) + ", blocklen: " + itos(blocklen));
 
 				//not found, continue
 				encode_uint32(id, buf4);
@@ -259,7 +259,7 @@ void EditorFileServer::_subthread_start(void *s) {
 			} break;
 			case FileAccessNetwork::COMMAND_CLOSE: {
 
-				print_line("CLOSED");
+				print_verbose("CLOSED");
 				ERR_CONTINUE(!cd->files.has(id));
 				memdelete(cd->files[id]);
 				cd->files.erase(id);
@@ -330,7 +330,7 @@ void EditorFileServer::stop() {
 
 EditorFileServer::EditorFileServer() {
 
-	server = TCP_Server::create_ref();
+	server.instance();
 	wait_mutex = Mutex::create();
 	quit = false;
 	active = false;

@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2017 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2017 Godot Engine contributors (cf. AUTHORS.md)    */
+/* Copyright (c) 2007-2018 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2018 Godot Engine contributors (cf. AUTHORS.md)    */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -27,10 +27,11 @@
 /* TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE     */
 /* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                */
 /*************************************************************************/
+
 #include "light.h"
 
-#include "engine.h"
-#include "project_settings.h"
+#include "core/engine.h"
+#include "core/project_settings.h"
 #include "scene/resources/surface_tool.h"
 
 bool Light::_can_gizmo_scale() const {
@@ -47,6 +48,13 @@ void Light::set_param(Param p_param, float p_value) {
 
 	if (p_param == PARAM_SPOT_ANGLE || p_param == PARAM_RANGE) {
 		update_gizmo();
+
+		if (p_param == PARAM_SPOT_ANGLE) {
+			_change_notify("spot_angle");
+		} else if (p_param == PARAM_RANGE) {
+			_change_notify("omni_range");
+			_change_notify("spot_range");
+		}
 	}
 }
 
@@ -117,29 +125,37 @@ bool Light::get_shadow_reverse_cull_face() const {
 	return reverse_cull;
 }
 
-Rect3 Light::get_aabb() const {
+AABB Light::get_aabb() const {
 
 	if (type == VisualServer::LIGHT_DIRECTIONAL) {
 
-		return Rect3(Vector3(-1, -1, -1), Vector3(2, 2, 2));
+		return AABB(Vector3(-1, -1, -1), Vector3(2, 2, 2));
 
 	} else if (type == VisualServer::LIGHT_OMNI) {
 
-		return Rect3(Vector3(-1, -1, -1) * param[PARAM_RANGE], Vector3(2, 2, 2) * param[PARAM_RANGE]);
+		return AABB(Vector3(-1, -1, -1) * param[PARAM_RANGE], Vector3(2, 2, 2) * param[PARAM_RANGE]);
 
 	} else if (type == VisualServer::LIGHT_SPOT) {
 
 		float len = param[PARAM_RANGE];
 		float size = Math::tan(Math::deg2rad(param[PARAM_SPOT_ANGLE])) * len;
-		return Rect3(Vector3(-size, -size, -len), Vector3(size * 2, size * 2, len));
+		return AABB(Vector3(-size, -size, -len), Vector3(size * 2, size * 2, len));
 	}
 
-	return Rect3();
+	return AABB();
 }
 
 PoolVector<Face3> Light::get_faces(uint32_t p_usage_flags) const {
 
 	return PoolVector<Face3>();
+}
+
+void Light::set_bake_mode(BakeMode p_mode) {
+	bake_mode = p_mode;
+}
+
+Light::BakeMode Light::get_bake_mode() const {
+	return bake_mode;
 }
 
 void Light::_update_visibility() {
@@ -163,7 +179,8 @@ void Light::_update_visibility() {
 	}
 #endif
 
-	//VS::get_singleton()->instance_light_set_enabled(get_instance(),is_visible_in_tree() && editor_ok);
+	VS::get_singleton()->instance_set_visible(get_instance(), is_visible_in_tree() && editor_ok);
+
 	_change_notify("geometry/visible");
 }
 
@@ -219,11 +236,16 @@ void Light::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("set_shadow_color", "shadow_color"), &Light::set_shadow_color);
 	ClassDB::bind_method(D_METHOD("get_shadow_color"), &Light::get_shadow_color);
 
+	ClassDB::bind_method(D_METHOD("set_bake_mode", "bake_mode"), &Light::set_bake_mode);
+	ClassDB::bind_method(D_METHOD("get_bake_mode"), &Light::get_bake_mode);
+
 	ADD_GROUP("Light", "light_");
 	ADD_PROPERTY(PropertyInfo(Variant::COLOR, "light_color", PROPERTY_HINT_COLOR_NO_ALPHA), "set_color", "get_color");
 	ADD_PROPERTYI(PropertyInfo(Variant::REAL, "light_energy", PROPERTY_HINT_RANGE, "0,16,0.01"), "set_param", "get_param", PARAM_ENERGY);
+	ADD_PROPERTYI(PropertyInfo(Variant::REAL, "light_indirect_energy", PROPERTY_HINT_RANGE, "0,16,0.01"), "set_param", "get_param", PARAM_INDIRECT_ENERGY);
 	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "light_negative"), "set_negative", "is_negative");
 	ADD_PROPERTYI(PropertyInfo(Variant::REAL, "light_specular", PROPERTY_HINT_RANGE, "0,1,0.01"), "set_param", "get_param", PARAM_SPECULAR);
+	ADD_PROPERTY(PropertyInfo(Variant::INT, "light_bake_mode", PROPERTY_HINT_ENUM, "Disable,Indirect,All"), "set_bake_mode", "get_bake_mode");
 	ADD_PROPERTY(PropertyInfo(Variant::INT, "light_cull_mask", PROPERTY_HINT_LAYERS_3D_RENDER), "set_cull_mask", "get_cull_mask");
 	ADD_GROUP("Shadow", "shadow_");
 	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "shadow_enabled"), "set_shadow", "has_shadow");
@@ -236,6 +258,7 @@ void Light::_bind_methods() {
 	ADD_GROUP("", "");
 
 	BIND_ENUM_CONSTANT(PARAM_ENERGY);
+	BIND_ENUM_CONSTANT(PARAM_INDIRECT_ENERGY);
 	BIND_ENUM_CONSTANT(PARAM_SPECULAR);
 	BIND_ENUM_CONSTANT(PARAM_RANGE);
 	BIND_ENUM_CONSTANT(PARAM_ATTENUATION);
@@ -250,6 +273,10 @@ void Light::_bind_methods() {
 	BIND_ENUM_CONSTANT(PARAM_SHADOW_BIAS);
 	BIND_ENUM_CONSTANT(PARAM_SHADOW_BIAS_SPLIT_SCALE);
 	BIND_ENUM_CONSTANT(PARAM_MAX);
+
+	BIND_ENUM_CONSTANT(BAKE_DISABLED);
+	BIND_ENUM_CONSTANT(BAKE_INDIRECT);
+	BIND_ENUM_CONSTANT(BAKE_ALL);
 }
 
 Light::Light(VisualServer::LightType p_type) {
@@ -265,6 +292,7 @@ Light::Light(VisualServer::LightType p_type) {
 	VS::get_singleton()->instance_set_base(get_instance(), light);
 
 	reverse_cull = false;
+	bake_mode = BAKE_INDIRECT;
 
 	editor_only = false;
 	set_color(Color(1, 1, 1, 1));
@@ -273,6 +301,7 @@ Light::Light(VisualServer::LightType p_type) {
 	set_cull_mask(0xFFFFFFFF);
 
 	set_param(PARAM_ENERGY, 1);
+	set_param(PARAM_INDIRECT_ENERGY, 1);
 	set_param(PARAM_SPECULAR, 0.5);
 	set_param(PARAM_RANGE, 5);
 	set_param(PARAM_ATTENUATION, 1);
@@ -285,12 +314,13 @@ Light::Light(VisualServer::LightType p_type) {
 	set_param(PARAM_SHADOW_SPLIT_3_OFFSET, 0.5);
 	set_param(PARAM_SHADOW_NORMAL_BIAS, 0.0);
 	set_param(PARAM_SHADOW_BIAS, 0.15);
+	set_disable_scale(true);
 }
 
 Light::Light() {
 
 	type = VisualServer::LIGHT_DIRECTIONAL;
-	ERR_PRINT("Light shouldn't be instanced dircetly, use the subtypes.");
+	ERR_PRINT("Light should not be instanced directly; use the DirectionalLight, OmniLight or SpotLight subtypes instead.");
 }
 
 Light::~Light() {
@@ -354,7 +384,7 @@ void DirectionalLight::_bind_methods() {
 	ADD_PROPERTYI(PropertyInfo(Variant::REAL, "directional_shadow_normal_bias", PROPERTY_HINT_RANGE, "0,16,0.01"), "set_param", "get_param", PARAM_SHADOW_NORMAL_BIAS);
 	ADD_PROPERTYI(PropertyInfo(Variant::REAL, "directional_shadow_bias_split_scale", PROPERTY_HINT_RANGE, "0,1,0.01"), "set_param", "get_param", PARAM_SHADOW_BIAS_SPLIT_SCALE);
 	ADD_PROPERTY(PropertyInfo(Variant::INT, "directional_shadow_depth_range", PROPERTY_HINT_ENUM, "Stable,Optimized"), "set_shadow_depth_range", "get_shadow_depth_range");
-	ADD_PROPERTYI(PropertyInfo(Variant::REAL, "directional_shadow_max_distance", PROPERTY_HINT_RANGE, "0,65536,0.1"), "set_param", "get_param", PARAM_SHADOW_MAX_DISTANCE);
+	ADD_PROPERTYI(PropertyInfo(Variant::REAL, "directional_shadow_max_distance", PROPERTY_HINT_EXP_RANGE, "0,8192,0.1,or_greater"), "set_param", "get_param", PARAM_SHADOW_MAX_DISTANCE);
 
 	BIND_ENUM_CONSTANT(SHADOW_ORTHOGONAL);
 	BIND_ENUM_CONSTANT(SHADOW_PARALLEL_2_SPLITS);
@@ -364,8 +394,8 @@ void DirectionalLight::_bind_methods() {
 	BIND_ENUM_CONSTANT(SHADOW_DEPTH_RANGE_OPTIMIZED);
 }
 
-DirectionalLight::DirectionalLight()
-	: Light(VisualServer::LIGHT_DIRECTIONAL) {
+DirectionalLight::DirectionalLight() :
+		Light(VisualServer::LIGHT_DIRECTIONAL) {
 
 	set_param(PARAM_SHADOW_NORMAL_BIAS, 0.8);
 	set_param(PARAM_SHADOW_BIAS, 0.1);
@@ -407,8 +437,8 @@ void OmniLight::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("get_shadow_detail"), &OmniLight::get_shadow_detail);
 
 	ADD_GROUP("Omni", "omni_");
-	ADD_PROPERTYI(PropertyInfo(Variant::REAL, "omni_range", PROPERTY_HINT_RANGE, "0,65536,0.1"), "set_param", "get_param", PARAM_RANGE);
-	ADD_PROPERTYI(PropertyInfo(Variant::REAL, "omni_attenuation", PROPERTY_HINT_EXP_EASING), "set_param", "get_param", PARAM_ATTENUATION);
+	ADD_PROPERTYI(PropertyInfo(Variant::REAL, "omni_range", PROPERTY_HINT_EXP_RANGE, "0,4096,0.1,or_greater"), "set_param", "get_param", PARAM_RANGE);
+	ADD_PROPERTYI(PropertyInfo(Variant::REAL, "omni_attenuation", PROPERTY_HINT_EXP_EASING, "attenuation"), "set_param", "get_param", PARAM_ATTENUATION);
 	ADD_PROPERTY(PropertyInfo(Variant::INT, "omni_shadow_mode", PROPERTY_HINT_ENUM, "Dual Paraboloid,Cube"), "set_shadow_mode", "get_shadow_mode");
 	ADD_PROPERTY(PropertyInfo(Variant::INT, "omni_shadow_detail", PROPERTY_HINT_ENUM, "Vertical,Horizontal"), "set_shadow_detail", "get_shadow_detail");
 
@@ -419,8 +449,8 @@ void OmniLight::_bind_methods() {
 	BIND_ENUM_CONSTANT(SHADOW_DETAIL_HORIZONTAL);
 }
 
-OmniLight::OmniLight()
-	: Light(VisualServer::LIGHT_OMNI) {
+OmniLight::OmniLight() :
+		Light(VisualServer::LIGHT_OMNI) {
 
 	set_shadow_mode(SHADOW_CUBE);
 	set_shadow_detail(SHADOW_DETAIL_HORIZONTAL);
@@ -429,8 +459,8 @@ OmniLight::OmniLight()
 void SpotLight::_bind_methods() {
 
 	ADD_GROUP("Spot", "spot_");
-	ADD_PROPERTYI(PropertyInfo(Variant::REAL, "spot_range", PROPERTY_HINT_RANGE, "0,65536,0.1"), "set_param", "get_param", PARAM_RANGE);
-	ADD_PROPERTYI(PropertyInfo(Variant::REAL, "spot_attenuation", PROPERTY_HINT_EXP_EASING), "set_param", "get_param", PARAM_ATTENUATION);
+	ADD_PROPERTYI(PropertyInfo(Variant::REAL, "spot_range", PROPERTY_HINT_EXP_RANGE, "0,4096,0.1,or_greater"), "set_param", "get_param", PARAM_RANGE);
+	ADD_PROPERTYI(PropertyInfo(Variant::REAL, "spot_attenuation", PROPERTY_HINT_EXP_EASING, "attenuation"), "set_param", "get_param", PARAM_ATTENUATION);
 	ADD_PROPERTYI(PropertyInfo(Variant::REAL, "spot_angle", PROPERTY_HINT_RANGE, "0,180,0.1"), "set_param", "get_param", PARAM_SPOT_ANGLE);
-	ADD_PROPERTYI(PropertyInfo(Variant::REAL, "spot_angle_attenuation", PROPERTY_HINT_EXP_EASING), "set_param", "get_param", PARAM_SPOT_ATTENUATION);
+	ADD_PROPERTYI(PropertyInfo(Variant::REAL, "spot_angle_attenuation", PROPERTY_HINT_EXP_EASING, "attenuation"), "set_param", "get_param", PARAM_SPOT_ATTENUATION);
 }

@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2017 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2017 Godot Engine contributors (cf. AUTHORS.md)    */
+/* Copyright (c) 2007-2018 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2018 Godot Engine contributors (cf. AUTHORS.md)    */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -27,15 +27,16 @@
 /* TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE     */
 /* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                */
 /*************************************************************************/
+
 #ifndef DVECTOR_H
 #define DVECTOR_H
 
-#include "os/copymem.h"
-#include "os/memory.h"
-#include "os/rw_lock.h"
-#include "pool_allocator.h"
-#include "safe_refcount.h"
-#include "ustring.h"
+#include "core/os/copymem.h"
+#include "core/os/memory.h"
+#include "core/os/rw_lock.h"
+#include "core/pool_allocator.h"
+#include "core/safe_refcount.h"
+#include "core/ustring.h"
 
 struct MemoryPool {
 
@@ -55,12 +56,12 @@ struct MemoryPool {
 
 		Alloc *free_list;
 
-		Alloc() {
-			mem = NULL;
-			lock = 0;
-			pool_id = POOL_ALLOCATOR_INVALID_ID;
-			size = 0;
-			free_list = NULL;
+		Alloc() :
+				lock(0),
+				mem(NULL),
+				pool_id(POOL_ALLOCATOR_INVALID_ID),
+				size(0),
+				free_list(NULL) {
 		}
 	};
 
@@ -148,8 +149,8 @@ class PoolVector {
 			}
 		}
 
-		if (old_alloc->refcount.unref() == true) {
-//this should never happen but..
+		if (old_alloc->refcount.unref()) {
+			//this should never happen but..
 
 #ifdef DEBUG_ENABLED
 			MemoryPool::alloc_mutex->lock();
@@ -208,7 +209,7 @@ class PoolVector {
 		if (!alloc)
 			return;
 
-		if (alloc->refcount.unref() == false) {
+		if (!alloc->refcount.unref()) {
 			alloc = NULL;
 			return;
 		}

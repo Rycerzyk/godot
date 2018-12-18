@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2017 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2017 Godot Engine contributors (cf. AUTHORS.md)    */
+/* Copyright (c) 2007-2018 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2018 Godot Engine contributors (cf. AUTHORS.md)    */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -27,13 +27,13 @@
 /* TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE     */
 /* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                */
 /*************************************************************************/
+
 #ifndef STRING_DB_H
 #define STRING_DB_H
 
-#include "hash_map.h"
-#include "os/mutex.h"
-#include "safe_refcount.h"
-#include "ustring.h"
+#include "core/os/mutex.h"
+#include "core/safe_refcount.h"
+#include "core/ustring.h"
 /**
 	@author Juan Linietsky <reduzio@gmail.com>
 */
@@ -66,6 +66,7 @@ class StringName {
 		_Data() {
 			cname = NULL;
 			next = prev = NULL;
+			idx = 0;
 			hash = 0;
 		}
 	};
@@ -138,7 +139,22 @@ public:
 
 		_FORCE_INLINE_ bool operator()(const StringName &l, const StringName &r) const {
 
-			return l.operator String() < r.operator String();
+			const char *l_cname = l._data ? l._data->cname : "";
+			const char *r_cname = r._data ? r._data->cname : "";
+
+			if (l_cname) {
+
+				if (r_cname)
+					return is_str_less(l_cname, r_cname);
+				else
+					return is_str_less(l_cname, r._data->name.ptr());
+			} else {
+
+				if (r_cname)
+					return is_str_less(l._data->name.ptr(), r_cname);
+				else
+					return is_str_less(l._data->name.ptr(), r._data->name.ptr());
+			}
 		}
 	};
 
@@ -149,11 +165,6 @@ public:
 	StringName(const StaticCString &p_static_string);
 	StringName();
 	~StringName();
-};
-
-struct StringNameHasher {
-
-	static _FORCE_INLINE_ uint32_t hash(const StringName &p_string) { return p_string.hash(); }
 };
 
 StringName _scs_create(const char *p_chr);

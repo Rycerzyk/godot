@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2017 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2017 Godot Engine contributors (cf. AUTHORS.md)    */
+/* Copyright (c) 2007-2018 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2018 Godot Engine contributors (cf. AUTHORS.md)    */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -27,14 +27,15 @@
 /* TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE     */
 /* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                */
 /*************************************************************************/
+
 #ifdef IPHONE_ENABLED
 
 #ifndef OS_IPHONE_H
 #define OS_IPHONE_H
 
+#include "core/os/input.h"
 #include "drivers/coreaudio/audio_driver_coreaudio.h"
 #include "drivers/unix/os_unix.h"
-#include "os/input.h"
 
 #include "game_center.h"
 #include "icloud.h"
@@ -46,21 +47,14 @@
 
 class OSIPhone : public OS_Unix {
 
-public:
-	enum Orientations {
-		PortraitDown,
-		PortraitUp,
-		LandscapeLeft,
-		LandscapeRight,
-	};
-
 private:
 	enum {
 		MAX_MOUSE_COUNT = 8,
 		MAX_EVENTS = 64,
 	};
 
-	uint8_t supported_orientations;
+	static HashMap<String, void *> dynamic_symbol_lookup_table;
+	friend void register_dynamic_symbol(char *name, void *address);
 
 	VisualServer *visual_server;
 
@@ -83,9 +77,10 @@ private:
 	virtual int get_video_driver_count() const;
 	virtual const char *get_video_driver_name(int p_driver) const;
 
-	virtual void initialize_logger();
+	virtual int get_current_video_driver() const;
+
 	virtual void initialize_core();
-	virtual void initialize(const VideoMode &p_desired, int p_video_driver, int p_audio_driver);
+	virtual Error initialize(const VideoMode &p_desired, int p_video_driver, int p_audio_driver);
 
 	virtual void set_main_loop(MainLoop *p_main_loop);
 	virtual MainLoop *get_main_loop() const;
@@ -103,7 +98,7 @@ private:
 		};
 	};
 
-	MouseList mouse_list;
+	MouseList touch_list;
 
 	Vector3 last_accel;
 
@@ -119,13 +114,15 @@ private:
 
 	int virtual_keyboard_height;
 
+	int video_driver_index;
+
 public:
 	bool iterate();
 
 	uint8_t get_orientations() const;
 
-	void mouse_button(int p_idx, int p_x, int p_y, bool p_pressed, bool p_doubleclick, bool p_use_as_mouse);
-	void mouse_move(int p_idx, int p_prev_x, int p_prev_y, int p_x, int p_y, bool p_use_as_mouse);
+	void touch_press(int p_idx, int p_x, int p_y, bool p_pressed, bool p_doubleclick);
+	void touch_drag(int p_idx, int p_prev_x, int p_prev_y, int p_x, int p_y);
 	void touches_cancelled();
 	void key(uint32_t p_key, bool p_pressed);
 	void set_virtual_keyboard_height(int p_height);
@@ -153,6 +150,10 @@ public:
 
 	virtual void alert(const String &p_alert, const String &p_title = "ALERT!");
 
+	virtual Error open_dynamic_library(const String p_path, void *&p_library_handle, bool p_also_set_library_path = false);
+	virtual Error close_dynamic_library(void *p_library_handle);
+	virtual Error get_dynamic_library_symbol_handle(void *p_library_handle, const String p_name, void *&p_symbol_handle, bool p_optional = false);
+
 	virtual void set_video_mode(const VideoMode &p_video_mode, int p_screen = 0);
 	virtual VideoMode get_video_mode(int p_screen = 0) const;
 	virtual void get_fullscreen_mode_list(List<VideoMode> *p_list, int p_screen = 0) const;
@@ -167,8 +168,10 @@ public:
 	virtual int get_virtual_keyboard_height() const;
 
 	virtual void set_cursor_shape(CursorShape p_shape);
+	virtual void set_custom_mouse_cursor(const RES &p_cursor, CursorShape p_shape, const Vector2 &p_hotspot);
 
 	virtual Size2 get_window_size() const;
+	virtual Rect2 get_window_safe_area() const;
 
 	virtual bool has_touchscreen_ui_hint() const;
 
@@ -178,7 +181,7 @@ public:
 
 	Error shell_open(String p_uri);
 
-	String get_data_dir() const;
+	String get_user_data_dir() const;
 
 	void set_locale(String p_locale);
 	String get_locale() const;

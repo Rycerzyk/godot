@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2017 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2017 Godot Engine contributors (cf. AUTHORS.md)    */
+/* Copyright (c) 2007-2018 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2018 Godot Engine contributors (cf. AUTHORS.md)    */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -27,15 +27,17 @@
 /* TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE     */
 /* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                */
 /*************************************************************************/
+
 #ifndef OBJECT_H
 #define OBJECT_H
 
-#include "list.h"
-#include "map.h"
-#include "os/rw_lock.h"
-#include "set.h"
-#include "variant.h"
-#include "vmap.h"
+#include "core/hash_map.h"
+#include "core/list.h"
+#include "core/map.h"
+#include "core/os/rw_lock.h"
+#include "core/set.h"
+#include "core/variant.h"
+#include "core/vmap.h"
 
 #define VARIANT_ARG_LIST const Variant &p_arg1 = Variant(), const Variant &p_arg2 = Variant(), const Variant &p_arg3 = Variant(), const Variant &p_arg4 = Variant(), const Variant &p_arg5 = Variant()
 #define VARIANT_ARG_PASS p_arg1, p_arg2, p_arg3, p_arg4, p_arg5
@@ -54,7 +56,7 @@ enum PropertyHint {
 	PROPERTY_HINT_RANGE, ///< hint_text = "min,max,step,slider; //slider is optional"
 	PROPERTY_HINT_EXP_RANGE, ///< hint_text = "min,max,step", exponential edit
 	PROPERTY_HINT_ENUM, ///< hint_text= "val1,val2,val3,etc"
-	PROPERTY_HINT_EXP_EASING, /// exponential easing function (Math::ease)
+	PROPERTY_HINT_EXP_EASING, /// exponential easing function (Math::ease) use "attenuation" hint string to revert (flip h), "full" to also include in/out. (ie: "attenuation,inout")
 	PROPERTY_HINT_LENGTH, ///< hint_text= "length" (as integer)
 	PROPERTY_HINT_SPRITE_FRAME,
 	PROPERTY_HINT_KEY_ACCEL, ///< hint_text= "length" (as integer)
@@ -69,6 +71,7 @@ enum PropertyHint {
 	PROPERTY_HINT_GLOBAL_DIR, ///< a directory path must be passed
 	PROPERTY_HINT_RESOURCE_TYPE, ///< a resource object type
 	PROPERTY_HINT_MULTILINE_TEXT, ///< used for string properties that can contain multiple lines
+	PROPERTY_HINT_PLACEHOLDER_TEXT, ///< used to set a placeholder text for string properties
 	PROPERTY_HINT_COLOR_NO_ALPHA, ///< used for ignoring alpha component when editing a color
 	PROPERTY_HINT_IMAGE_COMPRESS_LOSSY,
 	PROPERTY_HINT_IMAGE_COMPRESS_LOSSLESS,
@@ -84,7 +87,9 @@ enum PropertyHint {
 	PROPERTY_HINT_PROPERTY_OF_INSTANCE, ///< a property of an instance
 	PROPERTY_HINT_PROPERTY_OF_SCRIPT, ///< a property of a script & base
 	PROPERTY_HINT_OBJECT_TOO_BIG, ///< object is too big to send
+	PROPERTY_HINT_NODE_PATH_VALID_TYPES,
 	PROPERTY_HINT_MAX,
+	// When updating PropertyHint, also sync the hardcoded list in VisualScriptEditorVariableEdit
 };
 
 enum PropertyUsageFlags {
@@ -98,8 +103,9 @@ enum PropertyUsageFlags {
 	PROPERTY_USAGE_INTERNATIONALIZED = 64, //hint for internationalized strings
 	PROPERTY_USAGE_GROUP = 128, //used for grouping props in the editor
 	PROPERTY_USAGE_CATEGORY = 256,
-	PROPERTY_USAGE_STORE_IF_NONZERO = 512, //only store if nonzero
-	PROPERTY_USAGE_STORE_IF_NONONE = 1024, //only store if false
+	//those below are deprecated thanks to ClassDB's now class value cache
+	//PROPERTY_USAGE_STORE_IF_NONZERO = 512, //only store if nonzero
+	//PROPERTY_USAGE_STORE_IF_NONONE = 1024, //only store if false
 	PROPERTY_USAGE_NO_INSTANCE_STATE = 2048,
 	PROPERTY_USAGE_RESTART_IF_CHANGED = 4096,
 	PROPERTY_USAGE_SCRIPT_VARIABLE = 8192,
@@ -109,6 +115,9 @@ enum PropertyUsageFlags {
 	PROPERTY_USAGE_SCRIPT_DEFAULT_VALUE = 1 << 17,
 	PROPERTY_USAGE_CLASS_IS_ENUM = 1 << 18,
 	PROPERTY_USAGE_NIL_IS_VARIANT = 1 << 19,
+	PROPERTY_USAGE_INTERNAL = 1 << 20,
+	PROPERTY_USAGE_DO_NOT_SHARE_ON_DUPLICATE = 1 << 21, // If the object is duplicated also this property will be duplicated
+	PROPERTY_USAGE_HIGH_END_GFX = 1 << 22,
 
 	PROPERTY_USAGE_DEFAULT = PROPERTY_USAGE_STORAGE | PROPERTY_USAGE_EDITOR | PROPERTY_USAGE_NETWORK,
 	PROPERTY_USAGE_DEFAULT_INTL = PROPERTY_USAGE_STORAGE | PROPERTY_USAGE_EDITOR | PROPERTY_USAGE_NETWORK | PROPERTY_USAGE_INTERNATIONALIZED,
@@ -118,10 +127,6 @@ enum PropertyUsageFlags {
 #define ADD_SIGNAL(m_signal) ClassDB::add_signal(get_class_static(), m_signal)
 #define ADD_PROPERTY(m_property, m_setter, m_getter) ClassDB::add_property(get_class_static(), m_property, _scs_create(m_setter), _scs_create(m_getter))
 #define ADD_PROPERTYI(m_property, m_setter, m_getter, m_index) ClassDB::add_property(get_class_static(), m_property, _scs_create(m_setter), _scs_create(m_getter), m_index)
-#define ADD_PROPERTYNZ(m_property, m_setter, m_getter) ClassDB::add_property(get_class_static(), (m_property).added_usage(PROPERTY_USAGE_STORE_IF_NONZERO), _scs_create(m_setter), _scs_create(m_getter))
-#define ADD_PROPERTYINZ(m_property, m_setter, m_getter, m_index) ClassDB::add_property(get_class_static(), (m_property).added_usage(PROPERTY_USAGE_STORE_IF_NONZERO), _scs_create(m_setter), _scs_create(m_getter), m_index)
-#define ADD_PROPERTYNO(m_property, m_setter, m_getter) ClassDB::add_property(get_class_static(), (m_property).added_usage(PROPERTY_USAGE_STORE_IF_NONONE), _scs_create(m_setter), _scs_create(m_getter))
-#define ADD_PROPERTYINO(m_property, m_setter, m_getter, m_index) ClassDB::add_property(get_class_static(), (m_property).added_usage(PROPERTY_USAGE_STORE_IF_NONONE), _scs_create(m_setter), _scs_create(m_getter), m_index)
 #define ADD_GROUP(m_name, m_prefix) ClassDB::add_property_group(get_class_static(), m_name, m_prefix)
 
 struct PropertyInfo {
@@ -143,18 +148,18 @@ struct PropertyInfo {
 
 	static PropertyInfo from_dict(const Dictionary &p_dict);
 
-	PropertyInfo()
-		: type(Variant::NIL),
-		  hint(PROPERTY_HINT_NONE),
-		  usage(PROPERTY_USAGE_DEFAULT) {
+	PropertyInfo() :
+			type(Variant::NIL),
+			hint(PROPERTY_HINT_NONE),
+			usage(PROPERTY_USAGE_DEFAULT) {
 	}
 
-	PropertyInfo(Variant::Type p_type, const String p_name, PropertyHint p_hint = PROPERTY_HINT_NONE, const String &p_hint_string = "", uint32_t p_usage = PROPERTY_USAGE_DEFAULT, const StringName &p_class_name = StringName())
-		: type(p_type),
-		  name(p_name),
-		  hint(p_hint),
-		  hint_string(p_hint_string),
-		  usage(p_usage) {
+	PropertyInfo(Variant::Type p_type, const String p_name, PropertyHint p_hint = PROPERTY_HINT_NONE, const String &p_hint_string = "", uint32_t p_usage = PROPERTY_USAGE_DEFAULT, const StringName &p_class_name = StringName()) :
+			type(p_type),
+			name(p_name),
+			hint(p_hint),
+			hint_string(p_hint_string),
+			usage(p_usage) {
 
 		if (hint == PROPERTY_HINT_RESOURCE_TYPE) {
 			class_name = hint_string;
@@ -163,11 +168,11 @@ struct PropertyInfo {
 		}
 	}
 
-	PropertyInfo(const StringName &p_class_name)
-		: type(Variant::OBJECT),
-		  class_name(p_class_name),
-		  hint(PROPERTY_HINT_NONE),
-		  usage(PROPERTY_USAGE_DEFAULT) {
+	PropertyInfo(const StringName &p_class_name) :
+			type(Variant::OBJECT),
+			class_name(p_class_name),
+			hint(PROPERTY_HINT_NONE),
+			usage(PROPERTY_USAGE_DEFAULT) {
 	}
 
 	bool operator<(const PropertyInfo &p_info) const {
@@ -180,11 +185,11 @@ Array convert_property_list(const List<PropertyInfo> *p_list);
 struct MethodInfo {
 
 	String name;
-	List<PropertyInfo> arguments;
-	Vector<Variant> default_arguments;
 	PropertyInfo return_val;
 	uint32_t flags;
 	int id;
+	List<PropertyInfo> arguments;
+	Vector<Variant> default_arguments;
 
 	inline bool operator==(const MethodInfo &p_method) const { return id == p_method.id; }
 	inline bool operator<(const MethodInfo &p_method) const { return id == p_method.id ? (name < p_method.name) : (id < p_method.id); }
@@ -310,7 +315,7 @@ protected:                                                                      
 	virtual void _initialize_classv() {                                                                                                 \
 		initialize_class();                                                                                                             \
 	}                                                                                                                                   \
-	_FORCE_INLINE_ bool (Object::*(_get_get() const))(const StringName &p_name, Variant &) const {                                      \
+	_FORCE_INLINE_ bool (Object::*_get_get() const)(const StringName &p_name, Variant &) const {                                        \
 		return (bool (Object::*)(const StringName &, Variant &) const) & m_class::_get;                                                 \
 	}                                                                                                                                   \
 	virtual bool _getv(const StringName &p_name, Variant &r_ret) const {                                                                \
@@ -320,7 +325,7 @@ protected:                                                                      
 		}                                                                                                                               \
 		return m_inherits::_getv(p_name, r_ret);                                                                                        \
 	}                                                                                                                                   \
-	_FORCE_INLINE_ bool (Object::*(_get_set() const))(const StringName &p_name, const Variant &p_property) {                            \
+	_FORCE_INLINE_ bool (Object::*_get_set() const)(const StringName &p_name, const Variant &p_property) {                              \
 		return (bool (Object::*)(const StringName &, const Variant &)) & m_class::_set;                                                 \
 	}                                                                                                                                   \
 	virtual bool _setv(const StringName &p_name, const Variant &p_property) {                                                           \
@@ -330,7 +335,7 @@ protected:                                                                      
 		}                                                                                                                               \
 		return false;                                                                                                                   \
 	}                                                                                                                                   \
-	_FORCE_INLINE_ void (Object::*(_get_get_property_list() const))(List<PropertyInfo> * p_list) const {                                \
+	_FORCE_INLINE_ void (Object::*_get_get_property_list() const)(List<PropertyInfo> * p_list) const {                                  \
 		return (void (Object::*)(List<PropertyInfo> *) const) & m_class::_get_property_list;                                            \
 	}                                                                                                                                   \
 	virtual void _get_property_listv(List<PropertyInfo> *p_list, bool p_reversed) const {                                               \
@@ -349,7 +354,7 @@ protected:                                                                      
 			m_inherits::_get_property_listv(p_list, p_reversed);                                                                        \
 		}                                                                                                                               \
 	}                                                                                                                                   \
-	_FORCE_INLINE_ void (Object::*(_get_notification() const))(int) {                                                                   \
+	_FORCE_INLINE_ void (Object::*_get_notification() const)(int) {                                                                     \
 		return (void (Object::*)(int)) & m_class::_notification;                                                                        \
 	}                                                                                                                                   \
 	virtual void _notificationv(int p_notification, bool p_reversed) {                                                                  \
@@ -385,7 +390,8 @@ public:
 
 		CONNECT_DEFERRED = 1,
 		CONNECT_PERSIST = 2, // hint for scene to save this connection
-		CONNECT_ONESHOT = 4
+		CONNECT_ONESHOT = 4,
+		CONNECT_REFERENCE_COUNTED = 8,
 	};
 
 	struct Connection {
@@ -413,7 +419,7 @@ private:
 	};
 
 #ifdef DEBUG_ENABLED
-	friend class _ObjectDebugLock;
+	friend struct _ObjectDebugLock;
 #endif
 	friend bool predelete_handler(Object *);
 	friend void postinitialize_handler(Object *);
@@ -427,17 +433,19 @@ private:
 
 			_FORCE_INLINE_ bool operator<(const Target &p_target) const { return (_id == p_target._id) ? (method < p_target.method) : (_id < p_target._id); }
 
-			Target(const ObjectID &p_id, const StringName &p_method)
-				: _id(p_id),
-				  method(p_method) {
+			Target(const ObjectID &p_id, const StringName &p_method) :
+					_id(p_id),
+					method(p_method) {
 			}
 			Target() { _id = 0; }
 		};
 
 		struct Slot {
 
+			int reference_count;
 			Connection conn;
 			List<Connection>::Element *cE;
+			Slot() { reference_count = 0; }
 		};
 
 		MethodInfo user;
@@ -446,7 +454,7 @@ private:
 		Signal() { lock = 0; }
 	};
 
-	HashMap<StringName, Signal, StringNameHasher> signal_map;
+	HashMap<StringName, Signal> signal_map;
 	List<Connection> connections;
 #ifdef DEBUG_ENABLED
 	SafeRefCount _lock_index;
@@ -477,10 +485,14 @@ private:
 	Array _get_incoming_connections() const;
 	void _set_bind(const String &p_set, const Variant &p_value);
 	Variant _get_bind(const String &p_name) const;
-
-	void *_script_instance_bindings[MAX_SCRIPT_INSTANCE_BINDINGS];
+	void _set_indexed_bind(const NodePath &p_name, const Variant &p_value);
+	Variant _get_indexed_bind(const NodePath &p_name) const;
 
 	void property_list_changed_notify();
+
+	friend class Reference;
+	uint32_t instance_binding_count;
+	void *_script_instance_bindings[MAX_SCRIPT_INSTANCE_BINDINGS];
 
 protected:
 	virtual void _initialize_classv() { initialize_class(); }
@@ -499,16 +511,16 @@ protected:
 	_FORCE_INLINE_ static void (*_get_bind_methods())() {
 		return &Object::_bind_methods;
 	}
-	_FORCE_INLINE_ bool (Object::*(_get_get() const))(const StringName &p_name, Variant &r_ret) const {
+	_FORCE_INLINE_ bool (Object::*_get_get() const)(const StringName &p_name, Variant &r_ret) const {
 		return &Object::_get;
 	}
-	_FORCE_INLINE_ bool (Object::*(_get_set() const))(const StringName &p_name, const Variant &p_property) {
+	_FORCE_INLINE_ bool (Object::*_get_set() const)(const StringName &p_name, const Variant &p_property) {
 		return &Object::_set;
 	}
-	_FORCE_INLINE_ void (Object::*(_get_get_property_list() const))(List<PropertyInfo> *p_list) const {
+	_FORCE_INLINE_ void (Object::*_get_get_property_list() const)(List<PropertyInfo> *p_list) const {
 		return &Object::_get_property_list;
 	}
-	_FORCE_INLINE_ void (Object::*(_get_notification() const))(int) {
+	_FORCE_INLINE_ void (Object::*_get_notification() const)(int) {
 		return &Object::_notification;
 	}
 	static void get_valid_parents_static(List<String> *p_parents);
@@ -538,6 +550,8 @@ protected:
 
 	friend class ClassDB;
 	virtual void _validate_property(PropertyInfo &property) const;
+
+	void _disconnect(const StringName &p_signal, Object *p_to_object, const StringName &p_to_method, bool p_force = false);
 
 public: //should be protected, but bug in clang++
 	static void initialize_class();
@@ -627,6 +641,8 @@ public:
 
 	void set(const StringName &p_name, const Variant &p_value, bool *r_valid = NULL);
 	Variant get(const StringName &p_name, bool *r_valid = NULL) const;
+	void set_indexed(const Vector<StringName> &p_names, const Variant &p_value, bool *r_valid = NULL);
+	Variant get_indexed(const Vector<StringName> &p_names, bool *r_valid = NULL) const;
 
 	void get_property_list(List<PropertyInfo> *p_list, bool p_reversed = false) const;
 
@@ -682,11 +698,13 @@ public:
 	bool is_connected(const StringName &p_signal, Object *p_to_object, const StringName &p_to_method) const;
 
 	void call_deferred(const StringName &p_method, VARIANT_ARG_LIST);
+	void set_deferred(const StringName &p_property, const Variant &p_value);
 
 	void set_block_signals(bool p_block);
 	bool is_blocking_signals() const;
 
 	Variant::Type get_static_property_type(const StringName &p_property, bool *r_valid = NULL) const;
+	Variant::Type get_static_property_type_indexed(const Vector<StringName> &p_path, bool *r_valid = NULL) const;
 
 	virtual void get_translatable_strings(List<String> *p_strings) const;
 
@@ -703,6 +721,9 @@ public:
 #ifdef TOOLS_ENABLED
 	void editor_set_section_unfold(const String &p_section, bool p_unfolded);
 	bool editor_is_section_unfolded(const String &p_section);
+	const Set<String> &editor_get_section_folding() const { return editor_section_folding; }
+	void editor_clear_section_folding() { editor_section_folding.clear(); }
+
 #endif
 
 	//used by script languages to store binding data
@@ -753,18 +774,13 @@ public:
 	static void debug_objects(DebugFunc p_func);
 	static int get_object_count();
 
-#ifdef DEBUG_ENABLED
 	_FORCE_INLINE_ static bool instance_validate(Object *p_ptr) {
 
 		return instance_checks.has(p_ptr);
 	}
-#else
-	_FORCE_INLINE_ static bool instance_validate(Object *p_ptr) { return true; }
-
-#endif
 };
 
 //needed by macros
-#include "class_db.h"
+#include "core/class_db.h"
 
 #endif

@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2017 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2017 Godot Engine contributors (cf. AUTHORS.md)    */
+/* Copyright (c) 2007-2018 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2018 Godot Engine contributors (cf. AUTHORS.md)    */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -39,7 +39,7 @@
 	@author Bastiaan Olij <mux213@gmail.com>
 
 	Base class for all the classes in this file, handles a number of code functions that are shared among all meshes.
-	This class is set appart that it assumes a single surface is always generated for our mesh.
+	This class is set apart that it assumes a single surface is always generated for our mesh.
 */
 class PrimitiveMesh : public Mesh {
 
@@ -47,9 +47,11 @@ class PrimitiveMesh : public Mesh {
 
 private:
 	RID mesh;
-	mutable Rect3 aabb;
+	mutable AABB aabb;
+	AABB custom_aabb;
 
 	Ref<Material> material;
+	bool flip_faces;
 
 	mutable bool pending_request;
 	void _update() const;
@@ -73,13 +75,19 @@ public:
 	virtual Ref<Material> surface_get_material(int p_idx) const;
 	virtual int get_blend_shape_count() const;
 	virtual StringName get_blend_shape_name(int p_index) const;
-	virtual Rect3 get_aabb() const;
+	virtual AABB get_aabb() const;
 	virtual RID get_rid() const;
 
 	void set_material(const Ref<Material> &p_material);
 	Ref<Material> get_material() const;
 
 	Array get_mesh_arrays() const;
+
+	void set_custom_aabb(const AABB &p_custom);
+	AABB get_custom_aabb() const;
+
+	void set_flip_faces(bool p_enable);
+	bool get_flip_faces() const;
 
 	PrimitiveMesh();
 	~PrimitiveMesh();
@@ -189,7 +197,7 @@ public:
 };
 
 /**
-	Similar to quadmesh but with tesselation support
+	Similar to quadmesh but with tessellation support
 */
 class PlaneMesh : public PrimitiveMesh {
 

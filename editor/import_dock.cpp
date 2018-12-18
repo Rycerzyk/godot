@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2017 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2017 Godot Engine contributors (cf. AUTHORS.md)    */
+/* Copyright (c) 2007-2018 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2018 Godot Engine contributors (cf. AUTHORS.md)    */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -27,6 +27,7 @@
 /* TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE     */
 /* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                */
 /*************************************************************************/
+
 #include "import_dock.h"
 #include "editor_node.h"
 
@@ -37,11 +38,17 @@ public:
 	List<PropertyInfo> properties;
 	Ref<ResourceImporter> importer;
 	Vector<String> paths;
+	Set<StringName> checked;
+	bool checking;
 
 	bool _set(const StringName &p_name, const Variant &p_value) {
 
 		if (values.has(p_name)) {
 			values[p_name] = p_value;
+			if (checking) {
+				checked.insert(p_name);
+				_change_notify(String(p_name).utf8().get_data());
+			}
 			return true;
 		}
 
@@ -62,12 +69,23 @@ public:
 		for (const List<PropertyInfo>::Element *E = properties.front(); E; E = E->next()) {
 			if (!importer->get_option_visibility(E->get().name, values))
 				continue;
-			p_list->push_back(E->get());
+			PropertyInfo pi = E->get();
+			if (checking) {
+				pi.usage |= PROPERTY_USAGE_CHECKABLE;
+				if (checked.has(E->get().name)) {
+					pi.usage |= PROPERTY_USAGE_CHECKED;
+				}
+			}
+			p_list->push_back(pi);
 		}
 	}
 
 	void update() {
 		_change_notify();
+	}
+
+	ImportDockParameters() {
+		checking = false;
 	}
 };
 
@@ -124,6 +142,8 @@ void ImportDock::_update_options(const Ref<ConfigFile> &p_config) {
 
 	params->properties.clear();
 	params->values.clear();
+	params->checking = false;
+	params->checked.clear();
 
 	for (List<ResourceImporter::ImportOption>::Element *E = options.front(); E; E = E->next()) {
 
@@ -204,6 +224,8 @@ void ImportDock::set_edit_multiple_paths(const Vector<String> &p_paths) {
 
 	params->properties.clear();
 	params->values.clear();
+	params->checking = true;
+	params->checked.clear();
 
 	for (List<ResourceImporter::ImportOption>::Element *E = options.front(); E; E = E->next()) {
 
@@ -359,11 +381,21 @@ void ImportDock::_reimport() {
 		Error err = config->load(params->paths[i] + ".import");
 		ERR_CONTINUE(err != OK);
 
-		config->set_value("remap", "importer", params->importer->get_importer_name());
-		config->erase_section("params");
+		if (params->checking) {
+			//update only what edited (checkboxes)
+			for (List<PropertyInfo>::Element *E = params->properties.front(); E; E = E->next()) {
+				if (params->checked.has(E->get().name)) {
+					config->set_value("params", E->get().name, params->values[E->get().name]);
+				}
+			}
+		} else {
+			//override entirely
+			config->set_value("remap", "importer", params->importer->get_importer_name());
+			config->erase_section("params");
 
-		for (List<PropertyInfo>::Element *E = params->properties.front(); E; E = E->next()) {
-			config->set_value("params", E->get().name, params->values[E->get().name]);
+			for (List<PropertyInfo>::Element *E = params->properties.front(); E; E = E->next()) {
+				config->set_value("params", E->get().name, params->values[E->get().name]);
+			}
 		}
 
 		config->save(params->paths[i] + ".import");
@@ -387,11 +419,20 @@ void ImportDock::_notification(int p_what) {
 		} break;
 	}
 }
+
+void ImportDock::_property_toggled(const StringName &p_prop, bool p_checked) {
+	if (p_checked) {
+		params->checked.insert(p_prop);
+	} else {
+		params->checked.erase(p_prop);
+	}
+}
 void ImportDock::_bind_methods() {
 
 	ClassDB::bind_method(D_METHOD("_reimport"), &ImportDock::_reimport);
 	ClassDB::bind_method(D_METHOD("_preset_selected"), &ImportDock::_preset_selected);
 	ClassDB::bind_method(D_METHOD("_importer_selected"), &ImportDock::_importer_selected);
+	ClassDB::bind_method(D_METHOD("_property_toggled"), &ImportDock::_property_toggled);
 }
 
 void ImportDock::initialize_import_options() const {
@@ -403,8 +444,10 @@ void ImportDock::initialize_import_options() const {
 
 ImportDock::ImportDock() {
 
+	set_name("Import");
 	imported = memnew(Label);
 	imported->add_style_override("normal", EditorNode::get_singleton()->get_gui_base()->get_stylebox("normal", "LineEdit"));
+	imported->set_clip_text(true);
 	add_child(imported);
 	HBoxContainer *hb = memnew(HBoxContainer);
 	add_margin_child(TTR("Import As:"), hb);
@@ -413,14 +456,14 @@ ImportDock::ImportDock() {
 	hb->add_child(import_as);
 	import_as->set_h_size_flags(SIZE_EXPAND_FILL);
 	preset = memnew(MenuButton);
-	preset->set_text(TTR("Preset.."));
+	preset->set_text(TTR("Preset..."));
 	preset->get_popup()->connect("index_pressed", this, "_preset_selected");
 	hb->add_child(preset);
 
-	import_opts = memnew(PropertyEditor);
+	import_opts = memnew(EditorInspector);
 	add_child(import_opts);
 	import_opts->set_v_size_flags(SIZE_EXPAND_FILL);
-	import_opts->hide_top_label();
+	import_opts->connect("property_toggled", this, "_property_toggled");
 
 	hb = memnew(HBoxContainer);
 	add_child(hb);

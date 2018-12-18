@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2017 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2017 Godot Engine contributors (cf. AUTHORS.md)    */
+/* Copyright (c) 2007-2018 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2018 Godot Engine contributors (cf. AUTHORS.md)    */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -27,20 +27,28 @@
 /* TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE     */
 /* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                */
 /*************************************************************************/
+
 #ifndef CONTEXT_EGL_H
 #define CONTEXT_EGL_H
 
 #include <wrl.h>
 
 #include "EGL/egl.h"
+#include "core/error_list.h"
+#include "core/os/os.h"
 #include "drivers/gl_context/context_gl.h"
-#include "error_list.h"
-#include "os/os.h"
 
 using namespace Windows::UI::Core;
 
 class ContextEGL : public ContextGL {
 
+public:
+	enum Driver {
+		GLES_2_0,
+		GLES_3_0,
+	};
+
+private:
 	CoreWindow ^ window;
 
 	EGLDisplay mEglDisplay;
@@ -52,6 +60,8 @@ class ContextEGL : public ContextGL {
 
 	bool vsync;
 
+	Driver driver;
+
 public:
 	virtual void release_current();
 
@@ -61,16 +71,16 @@ public:
 	virtual int get_window_height();
 	virtual void swap_buffers();
 
-	void set_use_vsync(bool use) { vsync = use; }
-	bool is_using_vsync() const { return vsync; }
+	virtual void set_use_vsync(bool use) { vsync = use; }
+	virtual bool is_using_vsync() const { return vsync; }
 
 	virtual Error initialize();
 	void reset();
 
 	void cleanup();
 
-	ContextEGL(CoreWindow ^ p_window);
-	~ContextEGL();
+	ContextEGL(CoreWindow ^ p_window, Driver p_driver);
+	virtual ~ContextEGL();
 };
 
 #endif

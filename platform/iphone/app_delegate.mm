@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2017 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2017 Godot Engine contributors (cf. AUTHORS.md)    */
+/* Copyright (c) 2007-2018 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2018 Godot Engine contributors (cf. AUTHORS.md)    */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -27,6 +27,7 @@
 /* TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE     */
 /* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                */
 /*************************************************************************/
+
 #import "app_delegate.h"
 
 #include "core/project_settings.h"
@@ -34,21 +35,6 @@
 #import "gl_view.h"
 #include "main/main.h"
 #include "os_iphone.h"
-
-#ifdef MODULE_FACEBOOKSCORER_IOS_ENABLED
-#include "modules/FacebookScorer_ios/FacebookScorer.h"
-#endif
-
-#ifdef MODULE_GAME_ANALYTICS_ENABLED
-#import "modules/game_analytics/ios/MobileAppTracker.framework/Headers/MobileAppTracker.h"
-//#import "modules/game_analytics/ios/MobileAppTracker.h"
-#import <AdSupport/AdSupport.h>
-#endif
-
-#ifdef MODULE_PARSE_ENABLED
-#import "FBSDKCoreKit/FBSDKCoreKit.h"
-#import <Parse/Parse.h>
-#endif
 
 #import "GameController/GameController.h"
 
@@ -93,6 +79,7 @@ static ViewController *mainViewController = nil;
 }
 
 NSMutableDictionary *ios_joysticks = nil;
+NSMutableArray *pending_ios_joysticks = nil;
 
 - (GCControllerPlayerIndex)getFreePlayerIndex {
 	bool have_player_1 = false;
@@ -129,6 +116,66 @@ NSMutableDictionary *ios_joysticks = nil;
 	};
 };
 
+void _ios_add_joystick(GCController *controller, AppDelegate *delegate) {
+	// get a new id for our controller
+	int joy_id = OSIPhone::get_singleton()->get_unused_joy_id();
+	if (joy_id != -1) {
+		// assign our player index
+		if (controller.playerIndex == GCControllerPlayerIndexUnset) {
+			controller.playerIndex = [delegate getFreePlayerIndex];
+		};
+
+		// tell Godot about our new controller
+		OSIPhone::get_singleton()->joy_connection_changed(
+				joy_id, true, [controller.vendorName UTF8String]);
+
+		// add it to our dictionary, this will retain our controllers
+		[ios_joysticks setObject:controller
+						  forKey:[NSNumber numberWithInt:joy_id]];
+
+		// set our input handler
+		[delegate setControllerInputHandler:controller];
+	} else {
+		printf("Couldn't retrieve new joy id\n");
+	};
+}
+
+static void on_focus_out(ViewController *view_controller, bool *is_focus_out) {
+	if (!*is_focus_out) {
+		*is_focus_out = true;
+		if (OS::get_singleton()->get_main_loop())
+			OS::get_singleton()->get_main_loop()->notification(
+					MainLoop::NOTIFICATION_WM_FOCUS_OUT);
+
+		[view_controller.view stopAnimation];
+		if (OS::get_singleton()->native_video_is_playing()) {
+			OSIPhone::get_singleton()->native_video_focus_out();
+		}
+
+		AudioDriverCoreAudio *audio = dynamic_cast<AudioDriverCoreAudio *>(AudioDriverCoreAudio::get_singleton());
+		if (audio)
+			audio->stop();
+	}
+}
+
+static void on_focus_in(ViewController *view_controller, bool *is_focus_out) {
+	if (*is_focus_out) {
+		*is_focus_out = false;
+		if (OS::get_singleton()->get_main_loop())
+			OS::get_singleton()->get_main_loop()->notification(
+					MainLoop::NOTIFICATION_WM_FOCUS_IN);
+
+		[view_controller.view startAnimation];
+		if (OSIPhone::get_singleton()->native_video_is_playing()) {
+			OSIPhone::get_singleton()->native_video_unpause();
+		}
+
+		AudioDriverCoreAudio *audio = dynamic_cast<AudioDriverCoreAudio *>(AudioDriverCoreAudio::get_singleton());
+		if (audio)
+			audio->start();
+	}
+}
+
 - (void)controllerWasConnected:(NSNotification *)notification {
 	// create our dictionary if we don't have one yet
 	if (ios_joysticks == nil) {
@@ -141,28 +188,12 @@ NSMutableDictionary *ios_joysticks = nil;
 		printf("Couldn't retrieve new controller\n");
 	} else if ([[ios_joysticks allKeysForObject:controller] count] != 0) {
 		printf("Controller is already registered\n");
+	} else if (frame_count > 1) {
+		_ios_add_joystick(controller, self);
 	} else {
-		// get a new id for our controller
-		int joy_id = OSIPhone::get_singleton()->get_unused_joy_id();
-		if (joy_id != -1) {
-			// assign our player index
-			if (controller.playerIndex == GCControllerPlayerIndexUnset) {
-				controller.playerIndex = [self getFreePlayerIndex];
-			};
-
-			// tell Godot about our new controller
-			OSIPhone::get_singleton()->joy_connection_changed(
-					joy_id, true, [controller.vendorName UTF8String]);
-
-			// add it to our dictionary, this will retain our controllers
-			[ios_joysticks setObject:controller
-							  forKey:[NSNumber numberWithInt:joy_id]];
-
-			// set our input handler
-			[self setControllerInputHandler:controller];
-		} else {
-			printf("Couldn't retrieve new joy id\n");
-		};
+		if (pending_ios_joysticks == nil)
+			pending_ios_joysticks = [[NSMutableArray alloc] init];
+		[pending_ios_joysticks addObject:controller];
 	};
 };
 
@@ -366,6 +397,27 @@ NSMutableDictionary *ios_joysticks = nil;
 		[ios_joysticks dealloc];
 		ios_joysticks = nil;
 	};
+
+	if (pending_ios_joysticks != nil) {
+		[pending_ios_joysticks dealloc];
+		pending_ios_joysticks = nil;
+	};
+};
+
+OS::VideoMode _get_video_mode() {
+	int backingWidth;
+	int backingHeight;
+	glGetRenderbufferParameterivOES(GL_RENDERBUFFER_OES,
+			GL_RENDERBUFFER_WIDTH_OES, &backingWidth);
+	glGetRenderbufferParameterivOES(GL_RENDERBUFFER_OES,
+			GL_RENDERBUFFER_HEIGHT_OES, &backingHeight);
+
+	OS::VideoMode vm;
+	vm.fullscreen = true;
+	vm.width = backingWidth;
+	vm.height = backingHeight;
+	vm.resizable = false;
+	return vm;
 };
 
 static int frame_count = 0;
@@ -374,19 +426,7 @@ static int frame_count = 0;
 
 	switch (frame_count) {
 		case 0: {
-			int backingWidth;
-			int backingHeight;
-			glGetRenderbufferParameterivOES(GL_RENDERBUFFER_OES,
-					GL_RENDERBUFFER_WIDTH_OES, &backingWidth);
-			glGetRenderbufferParameterivOES(GL_RENDERBUFFER_OES,
-					GL_RENDERBUFFER_HEIGHT_OES, &backingHeight);
-
-			OS::VideoMode vm;
-			vm.fullscreen = true;
-			vm.width = backingWidth;
-			vm.height = backingHeight;
-			vm.resizable = false;
-			OS::get_singleton()->set_video_mode(vm);
+			OS::get_singleton()->set_video_mode(_get_video_mode());
 
 			if (!OS::get_singleton()) {
 				exit(0);
@@ -418,15 +458,19 @@ static int frame_count = 0;
 			OSIPhone::get_singleton()->set_unique_id(String::utf8([uuid UTF8String]));
 
 		}; break;
-		/*
-	case 1: {
-																	++frame_count;
-	}; break;
-*/
+
 		case 1: {
 
 			Main::setup2();
 			++frame_count;
+
+			if (pending_ios_joysticks != nil) {
+				for (GCController *controller in pending_ios_joysticks) {
+					_ios_add_joystick(controller, self);
+				}
+				[pending_ios_joysticks dealloc];
+				pending_ios_joysticks = nil;
+			}
 
 			// this might be necessary before here
 			NSDictionary *dict = [[NSBundle mainBundle] infoDictionary];
@@ -453,11 +497,7 @@ static int frame_count = 0;
 			}
 
 		}; break;
-		/*
-	case 3: {
-																	++frame_count;
-	}; break;
-*/
+
 		case 2: {
 
 			Main::start();
@@ -558,16 +598,14 @@ static int frame_count = 0;
 };
 
 - (void)applicationDidReceiveMemoryWarning:(UIApplication *)application {
-
-	printf("****************** did receive memory warning!\n");
 	OS::get_singleton()->get_main_loop()->notification(
 			MainLoop::NOTIFICATION_OS_MEMORY_WARNING);
 };
 
-- (void)applicationDidFinishLaunching:(UIApplication *)application {
-
-	printf("**************** app delegate init\n");
+- (BOOL)application:(UIApplication *)application didFinishLaunchingWithOptions:(NSDictionary *)launchOptions {
 	CGRect rect = [[UIScreen mainScreen] bounds];
+
+	is_focus_out = false;
 
 	[application setStatusBarHidden:YES withAnimation:UIStatusBarAnimationNone];
 	// disable idle timer
@@ -588,29 +626,24 @@ static int frame_count = 0;
 	//[glView setAutoresizingMask:UIViewAutoresizingFlexibleWidth |
 	// UIViewAutoresizingFlexibleWidth];
 
-	int backingWidth;
-	int backingHeight;
-	glGetRenderbufferParameterivOES(GL_RENDERBUFFER_OES,
-			GL_RENDERBUFFER_WIDTH_OES, &backingWidth);
-	glGetRenderbufferParameterivOES(GL_RENDERBUFFER_OES,
-			GL_RENDERBUFFER_HEIGHT_OES, &backingHeight);
+	OS::VideoMode vm = _get_video_mode();
 
 	NSArray *paths = NSSearchPathForDirectoriesInDomains(NSDocumentDirectory,
 			NSUserDomainMask, YES);
 	NSString *documentsDirectory = [paths objectAtIndex:0];
 
-	int err = iphone_main(backingWidth, backingHeight, gargc, gargv, String::utf8([documentsDirectory UTF8String]));
+	int err = iphone_main(vm.width, vm.height, gargc, gargv, String::utf8([documentsDirectory UTF8String]));
 	if (err != 0) {
 		// bail, things did not go very well for us, should probably output a message on screen with our error code...
 		exit(0);
-		return;
+		return FALSE;
 	};
 
 	view_controller = [[ViewController alloc] init];
 	view_controller.view = glView;
 	window.rootViewController = view_controller;
 
-	_set_keep_screen_on(bool(GLOBAL_DEF("display/window/keep_screen_on", true)) ? YES : NO);
+	_set_keep_screen_on(bool(GLOBAL_DEF("display/window/energy_saving/keep_screen_on", true)) ? YES : NO);
 	glView.useCADisplayLink =
 			bool(GLOBAL_DEF("display.iOS/use_cadisplaylink", true)) ? YES : NO;
 	printf("cadisaplylink: %d", glView.useCADisplayLink);
@@ -633,6 +666,12 @@ static int frame_count = 0;
 
 	[self initGameControllers];
 
+	[[NSNotificationCenter defaultCenter]
+			addObserver:self
+			   selector:@selector(onAudioInterruption:)
+				   name:AVAudioSessionInterruptionNotification
+				 object:[AVAudioSession sharedInstance]];
+
 	// OSIPhone::screen_width = rect.size.width - rect.origin.x;
 	// OSIPhone::screen_height = rect.size.height - rect.origin.y;
 
@@ -641,42 +680,22 @@ static int frame_count = 0;
 	// prevent to stop music in another background app
 	[[AVAudioSession sharedInstance] setCategory:AVAudioSessionCategoryAmbient error:nil];
 
-#ifdef MODULE_GAME_ANALYTICS_ENABLED
-	printf("********************* didFinishLaunchingWithOptions\n");
-	if (!ProjectSettings::get_singleton()->has("mobileapptracker/advertiser_id")) {
-		return;
+	return TRUE;
+};
+
+- (void)onAudioInterruption:(NSNotification *)notification {
+	if ([notification.name isEqualToString:AVAudioSessionInterruptionNotification]) {
+		if ([[notification.userInfo valueForKey:AVAudioSessionInterruptionTypeKey] isEqualToNumber:[NSNumber numberWithInt:AVAudioSessionInterruptionTypeBegan]]) {
+			NSLog(@"Audio interruption began");
+			on_focus_out(view_controller, &is_focus_out);
+		} else if ([[notification.userInfo valueForKey:AVAudioSessionInterruptionTypeKey] isEqualToNumber:[NSNumber numberWithInt:AVAudioSessionInterruptionTypeEnded]]) {
+			NSLog(@"Audio interruption ended");
+			on_focus_in(view_controller, &is_focus_out);
+		}
 	}
-	if (!ProjectSettings::get_singleton()->has("mobileapptracker/conversion_key")) {
-		return;
-	}
-
-	String adid = GLOBAL_DEF("mobileapptracker/advertiser_id", "");
-	String convkey = GLOBAL_DEF("mobileapptracker/conversion_key", "");
-
-	NSString *advertiser_id =
-			[NSString stringWithUTF8String:adid.utf8().get_data()];
-	NSString *conversion_key =
-			[NSString stringWithUTF8String:convkey.utf8().get_data()];
-
-	// Account Configuration info - must be set
-	[MobileAppTracker initializeWithMATAdvertiserId:advertiser_id
-								   MATConversionKey:conversion_key];
-
-	// Used to pass us the IFA, enables highly accurate 1-to-1 attribution.
-	// Required for many advertising networks.
-	[MobileAppTracker
-			setAppleAdvertisingIdentifier:[[ASIdentifierManager sharedManager]
-												  advertisingIdentifier]
-			   advertisingTrackingEnabled:[[ASIdentifierManager sharedManager]
-												  isAdvertisingTrackingEnabled]];
-
-#endif
 };
 
 - (void)applicationWillTerminate:(UIApplication *)application {
-
-	printf("********************* will terminate\n");
-
 	[self deinitGameControllers];
 
 	if (motionInitialised) {
@@ -690,111 +709,22 @@ static int frame_count = 0;
 	iphone_finish();
 };
 
-- (void)applicationDidEnterBackground:(UIApplication *)application {
-	printf("********************* did enter background\n");
-	///@TODO maybe add pause motionManager? and where would we unpause it?
+// When application goes to background (e.g. user switches to another app or presses Home),
+// then applicationWillResignActive -> applicationDidEnterBackground are called.
+// When user opens the inactive app again,
+// applicationWillEnterForeground -> applicationDidBecomeActive are called.
 
-	if (OS::get_singleton()->get_main_loop())
-		OS::get_singleton()->get_main_loop()->notification(
-				MainLoop::NOTIFICATION_WM_FOCUS_OUT);
-
-	[view_controller.view stopAnimation];
-	if (OS::get_singleton()->native_video_is_playing()) {
-		OSIPhone::get_singleton()->native_video_focus_out();
-	};
-}
-
-- (void)applicationWillEnterForeground:(UIApplication *)application {
-	printf("********************* did enter foreground\n");
-	// OS::get_singleton()->get_main_loop()->notification(MainLoop::NOTIFICATION_WM_FOCUS_IN);
-	[view_controller.view startAnimation];
-}
+// There are cases when applicationWillResignActive -> applicationDidBecomeActive
+// sequence is called without the app going to background. For example, that happens
+// if you open the app list without switching to another app or open/close the
+// notification panel by swiping from the upper part of the screen.
 
 - (void)applicationWillResignActive:(UIApplication *)application {
-	printf("********************* will resign active\n");
-	// OS::get_singleton()->get_main_loop()->notification(MainLoop::NOTIFICATION_WM_FOCUS_OUT);
-	[view_controller.view
-					stopAnimation]; // FIXME: pause seems to be recommended elsewhere
+	on_focus_out(view_controller, &is_focus_out);
 }
 
 - (void)applicationDidBecomeActive:(UIApplication *)application {
-	printf("********************* did become active\n");
-#ifdef MODULE_GAME_ANALYTICS_ENABLED
-	printf("********************* mobile app tracker found\n");
-	[MobileAppTracker measureSession];
-#endif
-	if (OS::get_singleton()->get_main_loop())
-		OS::get_singleton()->get_main_loop()->notification(
-				MainLoop::NOTIFICATION_WM_FOCUS_IN);
-
-	[view_controller.view
-					startAnimation]; // FIXME: resume seems to be recommended elsewhere
-	if (OSIPhone::get_singleton()->native_video_is_playing()) {
-		OSIPhone::get_singleton()->native_video_unpause();
-	};
-
-	// Fixed audio can not resume if it is interrupted cause by an incoming phone call
-	if (AudioDriverCoreAudio::get_singleton() != NULL)
-		AudioDriverCoreAudio::get_singleton()->start();
-}
-
-- (BOOL)application:(UIApplication *)application handleOpenURL:(NSURL *)url {
-#ifdef MODULE_FACEBOOKSCORER_IOS_ENABLED
-	return [[[FacebookScorer sharedInstance] facebook] handleOpenURL:url];
-#else
-	return false;
-#endif
-}
-
-// For 4.2+ support
-- (BOOL)application:(UIApplication *)application
-				  openURL:(NSURL *)url
-		sourceApplication:(NSString *)sourceApplication
-			   annotation:(id)annotation {
-#ifdef MODULE_PARSE_ENABLED
-	NSLog(@"Handling application openURL");
-	return
-			[[FBSDKApplicationDelegate sharedInstance] application:application
-														   openURL:url
-												 sourceApplication:sourceApplication
-														annotation:annotation];
-#endif
-
-#ifdef MODULE_FACEBOOKSCORER_IOS_ENABLED
-	return [[[FacebookScorer sharedInstance] facebook] handleOpenURL:url];
-#else
-	return false;
-#endif
-}
-
-- (void)application:(UIApplication *)application
-		didRegisterForRemoteNotificationsWithDeviceToken:(NSData *)deviceToken {
-#ifdef MODULE_PARSE_ENABLED
-	// Store the deviceToken in the current installation and save it to Parse.
-	PFInstallation *currentInstallation = [PFInstallation currentInstallation];
-	// NSString* token = [[NSString alloc] initWithData:deviceToken
-	// encoding:NSUTF8StringEncoding];
-	NSLog(@"Device Token : %@ ", deviceToken);
-	[currentInstallation setDeviceTokenFromData:deviceToken];
-	[currentInstallation saveInBackground];
-#endif
-}
-
-- (void)application:(UIApplication *)application
-		didReceiveRemoteNotification:(NSDictionary *)userInfo {
-#ifdef MODULE_PARSE_ENABLED
-	[PFPush handlePush:userInfo];
-	NSDictionary *aps =
-			[userInfo objectForKey:UIApplicationLaunchOptionsRemoteNotificationKey];
-	NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
-
-	NSLog(@"Push Notification Payload (app active) %@", aps);
-	[defaults setObject:aps forKey:@"notificationInfo"];
-	[defaults synchronize];
-	if (application.applicationState == UIApplicationStateInactive) {
-		[PFAnalytics trackAppOpenedWithRemoteNotificationPayload:userInfo];
-	}
-#endif
+	on_focus_in(view_controller, &is_focus_out);
 }
 
 - (void)dealloc {

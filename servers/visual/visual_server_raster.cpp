@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2017 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2017 Godot Engine contributors (cf. AUTHORS.md)    */
+/* Copyright (c) 2007-2018 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2018 Godot Engine contributors (cf. AUTHORS.md)    */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -27,13 +27,13 @@
 /* TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE     */
 /* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                */
 /*************************************************************************/
+
 #include "visual_server_raster.h"
 
-#include "default_mouse_cursor.xpm"
-#include "io/marshalls.h"
-#include "os/os.h"
-#include "project_settings.h"
-#include "sort.h"
+#include "core/io/marshalls.h"
+#include "core/os/os.h"
+#include "core/project_settings.h"
+#include "core/sort.h"
 #include "visual_server_canvas.h"
 #include "visual_server_global.h"
 #include "visual_server_scene.h"
@@ -92,18 +92,21 @@ void VisualServerRaster::request_frame_drawn_callback(Object *p_where, const Str
 	frame_drawn_callbacks.push_back(fdc);
 }
 
-void VisualServerRaster::draw() {
+void VisualServerRaster::draw(bool p_swap_buffers, double frame_step) {
+
+	//needs to be done before changes is reset to 0, to not force the editor to redraw
+	VS::get_singleton()->emit_signal("frame_pre_draw");
 
 	changes = 0;
 
-	VSG::rasterizer->begin_frame();
+	VSG::rasterizer->begin_frame(frame_step);
 
 	VSG::scene->update_dirty_instances(); //update scene stuff
 
 	VSG::viewport->draw_viewports();
 	VSG::scene->render_probes();
 	_draw_margins();
-	VSG::rasterizer->end_frame();
+	VSG::rasterizer->end_frame(p_swap_buffers);
 
 	while (frame_drawn_callbacks.front()) {
 
@@ -121,7 +124,7 @@ void VisualServerRaster::draw() {
 		frame_drawn_callbacks.pop_front();
 	}
 
-	emit_signal("frame_drawn_in_thread");
+	VS::get_singleton()->emit_signal("frame_post_draw");
 }
 void VisualServerRaster::sync() {
 }
@@ -157,6 +160,7 @@ void VisualServerRaster::set_boot_image(const Ref<Image> &p_image, const Color &
 	VSG::rasterizer->set_boot_image(p_image, p_color, p_scale);
 }
 void VisualServerRaster::set_default_clear_color(const Color &p_color) {
+	VSG::viewport->set_default_clear_color(p_color);
 }
 
 bool VisualServerRaster::has_feature(Features p_feature) const {
@@ -181,6 +185,13 @@ void VisualServerRaster::set_debug_generate_wireframes(bool p_generate) {
 	VSG::storage->set_debug_generate_wireframes(p_generate);
 }
 
+void VisualServerRaster::call_set_use_vsync(bool p_enable) {
+	OS::get_singleton()->_set_use_vsync(p_enable);
+}
+
+bool VisualServerRaster::is_low_end() const {
+	return VSG::rasterizer->is_low_end();
+}
 VisualServerRaster::VisualServerRaster() {
 
 	VSG::canvas = memnew(VisualServerCanvas);
@@ -200,4 +211,5 @@ VisualServerRaster::~VisualServerRaster() {
 	memdelete(VSG::canvas);
 	memdelete(VSG::viewport);
 	memdelete(VSG::rasterizer);
+	memdelete(VSG::scene);
 }

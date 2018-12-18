@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2017 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2017 Godot Engine contributors (cf. AUTHORS.md)    */
+/* Copyright (c) 2007-2018 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2018 Godot Engine contributors (cf. AUTHORS.md)    */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -27,11 +27,12 @@
 /* TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE     */
 /* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                */
 /*************************************************************************/
+
 #ifndef VISUAL_INSTANCE_H
 #define VISUAL_INSTANCE_H
 
-#include "face3.h"
-#include "rid.h"
+#include "core/math/face3.h"
+#include "core/rid.h"
 #include "scene/3d/spatial.h"
 #include "scene/resources/material.h"
 /**
@@ -62,15 +63,18 @@ public:
 	};
 
 	RID get_instance() const;
-	virtual Rect3 get_aabb() const = 0;
+	virtual AABB get_aabb() const = 0;
 	virtual PoolVector<Face3> get_faces(uint32_t p_usage_flags) const = 0;
 
-	virtual Rect3 get_transformed_aabb() const; // helper
+	virtual AABB get_transformed_aabb() const; // helper
 
 	void set_base(const RID &p_base);
 
 	void set_layer_mask(uint32_t p_mask);
 	uint32_t get_layer_mask() const;
+
+	void set_layer_mask_bit(int p_layer, bool p_enable);
+	bool get_layer_mask_bit(int p_layer) const;
 
 	VisualInstance();
 	~VisualInstance();

@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2017 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2017 Godot Engine contributors (cf. AUTHORS.md)    */
+/* Copyright (c) 2007-2018 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2018 Godot Engine contributors (cf. AUTHORS.md)    */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -29,16 +29,16 @@
 /*************************************************************************/
 
 #include "export.h"
-#include "bind/core_bind.h"
+#include "core/bind/core_bind.h"
+#include "core/io/marshalls.h"
+#include "core/io/zip_io.h"
+#include "core/object.h"
+#include "core/os/file_access.h"
+#include "core/project_settings.h"
+#include "core/version.h"
 #include "editor/editor_export.h"
 #include "editor/editor_node.h"
-#include "io/marshalls.h"
-#include "io/zip_io.h"
-#include "object.h"
-#include "os/file_access.h"
 #include "platform/uwp/logo.gen.h"
-#include "project_settings.h"
-#include "version.h"
 
 #include "thirdparty/minizip/unzip.h"
 #include "thirdparty/minizip/zip.h"
@@ -122,6 +122,14 @@ class AppxPackager {
 		Vector<BlockHash> hashes;
 		uLong file_crc32;
 		ZPOS64_T zip_offset;
+
+		FileMeta() :
+				lfh_size(0),
+				compressed(false),
+				compressed_size(0),
+				uncompressed_size(0),
+				file_crc32(0),
+				zip_offset(0) {}
 	};
 
 	String progress_task;
@@ -137,7 +145,7 @@ class AppxPackager {
 	ZPOS64_T end_of_central_dir_offset;
 	Vector<uint8_t> central_dir_data;
 
-	String hash_block(uint8_t *p_block_data, size_t p_block_len);
+	String hash_block(const uint8_t *p_block_data, size_t p_block_len);
 
 	void make_block_map();
 	void make_content_types();
@@ -188,14 +196,14 @@ public:
 
 ///////////////////////////////////////////////////////////////////////////
 
-String AppxPackager::hash_block(uint8_t *p_block_data, size_t p_block_len) {
+String AppxPackager::hash_block(const uint8_t *p_block_data, size_t p_block_len) {
 
 	char hash[32];
 	char base64[45];
 
 	sha256_context ctx;
 	sha256_init(&ctx);
-	sha256_hash(&ctx, p_block_data, p_block_len);
+	sha256_hash(&ctx, (uint8_t *)p_block_data, p_block_len);
 	sha256_done(&ctx, (uint8_t *)hash);
 
 	base64_encode(base64, hash, 32);
@@ -293,37 +301,37 @@ Vector<uint8_t> AppxPackager::make_file_header(FileMeta p_file_meta) {
 
 	int offs = 0;
 	// Write magic
-	offs += buf_put_int32(FILE_HEADER_MAGIC, &buf[offs]);
+	offs += buf_put_int32(FILE_HEADER_MAGIC, &buf.write[offs]);
 
 	// Version
-	offs += buf_put_int16(ZIP_VERSION, &buf[offs]);
+	offs += buf_put_int16(ZIP_VERSION, &buf.write[offs]);
 
 	// Special flag
-	offs += buf_put_int16(GENERAL_PURPOSE, &buf[offs]);
+	offs += buf_put_int16(GENERAL_PURPOSE, &buf.write[offs]);
 
 	// Compression
-	offs += buf_put_int16(p_file_meta.compressed ? Z_DEFLATED : 0, &buf[offs]);
+	offs += buf_put_int16(p_file_meta.compressed ? Z_DEFLATED : 0, &buf.write[offs]);
 
 	// File date and time
-	offs += buf_put_int32(0, &buf[offs]);
+	offs += buf_put_int32(0, &buf.write[offs]);
 
 	// CRC-32
-	offs += buf_put_int32(p_file_meta.file_crc32, &buf[offs]);
+	offs += buf_put_int32(p_file_meta.file_crc32, &buf.write[offs]);
 
 	// Compressed size
-	offs += buf_put_int32(p_file_meta.compressed_size, &buf[offs]);
+	offs += buf_put_int32(p_file_meta.compressed_size, &buf.write[offs]);
 
 	// Uncompressed size
-	offs += buf_put_int32(p_file_meta.uncompressed_size, &buf[offs]);
+	offs += buf_put_int32(p_file_meta.uncompressed_size, &buf.write[offs]);
 
 	// File name length
-	offs += buf_put_int16(p_file_meta.name.length(), &buf[offs]);
+	offs += buf_put_int16(p_file_meta.name.length(), &buf.write[offs]);
 
 	// Extra data length
-	offs += buf_put_int16(0, &buf[offs]);
+	offs += buf_put_int16(0, &buf.write[offs]);
 
 	// File name
-	offs += buf_put_string(p_file_meta.name, &buf[offs]);
+	offs += buf_put_string(p_file_meta.name, &buf.write[offs]);
 
 	// Done!
 	return buf;
@@ -336,47 +344,47 @@ void AppxPackager::store_central_dir_header(const FileMeta &p_file, bool p_do_ha
 	buf.resize(buf.size() + BASE_CENTRAL_DIR_SIZE + p_file.name.length());
 
 	// Write magic
-	offs += buf_put_int32(CENTRAL_DIR_MAGIC, &buf[offs]);
+	offs += buf_put_int32(CENTRAL_DIR_MAGIC, &buf.write[offs]);
 
 	// ZIP versions
-	offs += buf_put_int16(ZIP_ARCHIVE_VERSION, &buf[offs]);
-	offs += buf_put_int16(ZIP_VERSION, &buf[offs]);
+	offs += buf_put_int16(ZIP_ARCHIVE_VERSION, &buf.write[offs]);
+	offs += buf_put_int16(ZIP_VERSION, &buf.write[offs]);
 
 	// General purpose flag
-	offs += buf_put_int16(GENERAL_PURPOSE, &buf[offs]);
+	offs += buf_put_int16(GENERAL_PURPOSE, &buf.write[offs]);
 
 	// Compression
-	offs += buf_put_int16(p_file.compressed ? Z_DEFLATED : 0, &buf[offs]);
+	offs += buf_put_int16(p_file.compressed ? Z_DEFLATED : 0, &buf.write[offs]);
 
 	// Modification date/time
-	offs += buf_put_int32(0, &buf[offs]);
+	offs += buf_put_int32(0, &buf.write[offs]);
 
 	// Crc-32
-	offs += buf_put_int32(p_file.file_crc32, &buf[offs]);
+	offs += buf_put_int32(p_file.file_crc32, &buf.write[offs]);
 
 	// File sizes
-	offs += buf_put_int32(p_file.compressed_size, &buf[offs]);
-	offs += buf_put_int32(p_file.uncompressed_size, &buf[offs]);
+	offs += buf_put_int32(p_file.compressed_size, &buf.write[offs]);
+	offs += buf_put_int32(p_file.uncompressed_size, &buf.write[offs]);
 
 	// File name length
-	offs += buf_put_int16(p_file.name.length(), &buf[offs]);
+	offs += buf_put_int16(p_file.name.length(), &buf.write[offs]);
 
 	// Extra field length
-	offs += buf_put_int16(0, &buf[offs]);
+	offs += buf_put_int16(0, &buf.write[offs]);
 
 	// Comment length
-	offs += buf_put_int16(0, &buf[offs]);
+	offs += buf_put_int16(0, &buf.write[offs]);
 
 	// Disk number start, internal/external file attributes
 	for (int i = 0; i < 8; i++) {
-		buf[offs++] = 0;
+		buf.write[offs++] = 0;
 	}
 
 	// Relative offset
-	offs += buf_put_int32(p_file.zip_offset, &buf[offs]);
+	offs += buf_put_int32(p_file.zip_offset, &buf.write[offs]);
 
 	// File name
-	offs += buf_put_string(p_file.name, &buf[offs]);
+	offs += buf_put_string(p_file.name, &buf.write[offs]);
 
 	// Done!
 }
@@ -389,62 +397,62 @@ Vector<uint8_t> AppxPackager::make_end_of_central_record() {
 	int offs = 0;
 
 	// Write magic
-	offs += buf_put_int32(ZIP64_END_OF_CENTRAL_DIR_MAGIC, &buf[offs]);
+	offs += buf_put_int32(ZIP64_END_OF_CENTRAL_DIR_MAGIC, &buf.write[offs]);
 
 	// Size of this record
-	offs += buf_put_int64(ZIP64_END_OF_CENTRAL_DIR_SIZE, &buf[offs]);
+	offs += buf_put_int64(ZIP64_END_OF_CENTRAL_DIR_SIZE, &buf.write[offs]);
 
 	// Version (yes, twice)
-	offs += buf_put_int16(ZIP_ARCHIVE_VERSION, &buf[offs]);
-	offs += buf_put_int16(ZIP_ARCHIVE_VERSION, &buf[offs]);
+	offs += buf_put_int16(ZIP_ARCHIVE_VERSION, &buf.write[offs]);
+	offs += buf_put_int16(ZIP_ARCHIVE_VERSION, &buf.write[offs]);
 
 	// Disk number
 	for (int i = 0; i < 8; i++) {
-		buf[offs++] = 0;
+		buf.write[offs++] = 0;
 	}
 
 	// Number of entries (total and per disk)
-	offs += buf_put_int64(file_metadata.size(), &buf[offs]);
-	offs += buf_put_int64(file_metadata.size(), &buf[offs]);
+	offs += buf_put_int64(file_metadata.size(), &buf.write[offs]);
+	offs += buf_put_int64(file_metadata.size(), &buf.write[offs]);
 
 	// Size of central dir
-	offs += buf_put_int64(central_dir_data.size(), &buf[offs]);
+	offs += buf_put_int64(central_dir_data.size(), &buf.write[offs]);
 
 	// Central dir offset
-	offs += buf_put_int64(central_dir_offset, &buf[offs]);
+	offs += buf_put_int64(central_dir_offset, &buf.write[offs]);
 
 	////// ZIP64 locator
 
 	// Write magic for zip64 central dir locator
-	offs += buf_put_int32(ZIP64_END_DIR_LOCATOR_MAGIC, &buf[offs]);
+	offs += buf_put_int32(ZIP64_END_DIR_LOCATOR_MAGIC, &buf.write[offs]);
 
 	// Disk number
 	for (int i = 0; i < 4; i++) {
-		buf[offs++] = 0;
+		buf.write[offs++] = 0;
 	}
 
 	// Relative offset
-	offs += buf_put_int64(end_of_central_dir_offset, &buf[offs]);
+	offs += buf_put_int64(end_of_central_dir_offset, &buf.write[offs]);
 
 	// Number of disks
-	offs += buf_put_int32(1, &buf[offs]);
+	offs += buf_put_int32(1, &buf.write[offs]);
 
 	/////// End of zip directory
 
 	// Write magic for end central dir
-	offs += buf_put_int32(END_OF_CENTRAL_DIR_MAGIC, &buf[offs]);
+	offs += buf_put_int32(END_OF_CENTRAL_DIR_MAGIC, &buf.write[offs]);
 
 	// Dummy stuff for Zip64
 	for (int i = 0; i < 4; i++) {
-		buf[offs++] = 0x0;
+		buf.write[offs++] = 0x0;
 	}
 	for (int i = 0; i < 12; i++) {
-		buf[offs++] = 0xFF;
+		buf.write[offs++] = 0xFF;
 	}
 
 	// Size of comments
 	for (int i = 0; i < 2; i++) {
-		buf[offs++] = 0;
+		buf.write[offs++] = 0;
 	}
 
 	// Done!
@@ -456,8 +464,8 @@ void AppxPackager::init(FileAccess *p_fa) {
 	package = p_fa;
 	central_dir_offset = 0;
 	end_of_central_dir_offset = 0;
-	tmp_blockmap_file_path = EditorSettings::get_singleton()->get_settings_path() + "/tmp/tmpblockmap.xml";
-	tmp_content_types_file_path = EditorSettings::get_singleton()->get_settings_path() + "/tmp/tmpcontenttypes.xml";
+	tmp_blockmap_file_path = EditorSettings::get_singleton()->get_cache_dir().plus_file("tmpblockmap.xml");
+	tmp_content_types_file_path = EditorSettings::get_singleton()->get_cache_dir().plus_file("tmpcontenttypes.xml");
 }
 
 void AppxPackager::add_file(String p_file_name, const uint8_t *p_buffer, size_t p_len, int p_file_no, int p_total_files, bool p_compress) {
@@ -500,7 +508,7 @@ void AppxPackager::add_file(String p_file_name, const uint8_t *p_buffer, size_t 
 		size_t block_size = (p_len - step) > BLOCK_SIZE ? BLOCK_SIZE : (p_len - step);
 
 		for (uint32_t i = 0; i < block_size; i++) {
-			strm_in[i] = p_buffer[step + i];
+			strm_in.write[i] = p_buffer[step + i];
 		}
 
 		BlockHash bh;
@@ -510,8 +518,8 @@ void AppxPackager::add_file(String p_file_name, const uint8_t *p_buffer, size_t 
 
 			strm.avail_in = block_size;
 			strm.avail_out = strm_out.size();
-			strm.next_in = strm_in.ptr();
-			strm.next_out = strm_out.ptr();
+			strm.next_in = (uint8_t *)strm_in.ptr();
+			strm.next_out = strm_out.ptrw();
 
 			int total_out_before = strm.total_out;
 
@@ -522,14 +530,14 @@ void AppxPackager::add_file(String p_file_name, const uint8_t *p_buffer, size_t 
 			int start = file_buffer.size();
 			file_buffer.resize(file_buffer.size() + bh.compressed_size);
 			for (uint32_t i = 0; i < bh.compressed_size; i++)
-				file_buffer[start + i] = strm_out[i];
+				file_buffer.write[start + i] = strm_out[i];
 		} else {
 			bh.compressed_size = block_size;
 			//package->store_buffer(strm_in.ptr(), block_size);
 			int start = file_buffer.size();
 			file_buffer.resize(file_buffer.size() + block_size);
 			for (uint32_t i = 0; i < bh.compressed_size; i++)
-				file_buffer[start + i] = strm_in[i];
+				file_buffer.write[start + i] = strm_in[i];
 		}
 
 		meta.hashes.push_back(bh);
@@ -541,8 +549,8 @@ void AppxPackager::add_file(String p_file_name, const uint8_t *p_buffer, size_t 
 
 		strm.avail_in = 0;
 		strm.avail_out = strm_out.size();
-		strm.next_in = strm_in.ptr();
-		strm.next_out = strm_out.ptr();
+		strm.next_in = (uint8_t *)strm_in.ptr();
+		strm.next_out = strm_out.ptrw();
 
 		int total_out_before = strm.total_out;
 
@@ -552,7 +560,7 @@ void AppxPackager::add_file(String p_file_name, const uint8_t *p_buffer, size_t 
 		int start = file_buffer.size();
 		file_buffer.resize(file_buffer.size() + (strm.total_out - total_out_before));
 		for (uint32_t i = 0; i < (strm.total_out - total_out_before); i++)
-			file_buffer[start + i] = strm_out[i];
+			file_buffer.write[start + i] = strm_out[i];
 
 		deflateEnd(&strm);
 		meta.compressed_size = strm.total_out;
@@ -588,7 +596,7 @@ void AppxPackager::finish() {
 	Vector<uint8_t> blockmap_buffer;
 	blockmap_buffer.resize(blockmap_file->get_len());
 
-	blockmap_file->get_buffer(blockmap_buffer.ptr(), blockmap_buffer.size());
+	blockmap_file->get_buffer(blockmap_buffer.ptrw(), blockmap_buffer.size());
 
 	add_file("AppxBlockMap.xml", blockmap_buffer.ptr(), blockmap_buffer.size(), -1, -1, true);
 
@@ -604,7 +612,7 @@ void AppxPackager::finish() {
 	Vector<uint8_t> types_buffer;
 	types_buffer.resize(types_file->get_len());
 
-	types_file->get_buffer(types_buffer.ptr(), types_buffer.size());
+	types_file->get_buffer(types_buffer.ptrw(), types_buffer.size());
 
 	add_file("[Content_Types].xml", types_buffer.ptr(), types_buffer.size(), -1, -1, true);
 
@@ -769,7 +777,7 @@ class EditorExportUWP : public EditorExportPlatform {
 		result = result.replace("$version_string$", version);
 
 		Platform arch = (Platform)(int)p_preset->get("architecture/target");
-		String architecture = arch == ARM ? "ARM" : arch == X86 ? "x86" : "x64";
+		String architecture = arch == ARM ? "arm" : arch == X86 ? "x86" : "x64";
 		result = result.replace("$architecture$", architecture);
 
 		result = result.replace("$display_name$", String(p_preset->get("package/display_name")).empty() ? (String)ProjectSettings::get_singleton()->get("application/config/name") : String(p_preset->get("package/display_name")));
@@ -856,7 +864,7 @@ class EditorExportUWP : public EditorExportPlatform {
 		r_ret.resize(result.length());
 
 		for (int i = 0; i < result.length(); i++)
-			r_ret[i] = result.utf8().get(i);
+			r_ret.write[i] = result.utf8().get(i);
 
 		return r_ret;
 	}
@@ -886,7 +894,7 @@ class EditorExportUWP : public EditorExportPlatform {
 
 		if (!image) return data;
 
-		String tmp_path = EditorSettings::get_singleton()->get_settings_path().plus_file("tmp/uwp_tmp_logo.png");
+		String tmp_path = EditorSettings::get_singleton()->get_cache_dir().plus_file("uwp_tmp_logo.png");
 
 		Error err = image->get_data()->save_png(tmp_path);
 
@@ -911,7 +919,7 @@ class EditorExportUWP : public EditorExportPlatform {
 		}
 
 		data.resize(f->get_len());
-		f->get_buffer(data.ptr(), data.size());
+		f->get_buffer(data.ptrw(), data.size());
 
 		f->close();
 		memdelete(f);
@@ -1013,8 +1021,10 @@ public:
 		return "UWP";
 	}
 
-	virtual String get_binary_extension() const {
-		return "appx";
+	virtual List<String> get_binary_extensions(const Ref<EditorExportPreset> &p_preset) const {
+		List<String> list;
+		list.push_back("appx");
+		return list;
 	}
 
 	virtual Ref<Texture> get_logo() const {
@@ -1024,22 +1034,37 @@ public:
 	virtual void get_preset_features(const Ref<EditorExportPreset> &p_preset, List<String> *r_features) {
 		r_features->push_back("s3tc");
 		r_features->push_back("etc");
+		switch ((int)p_preset->get("architecture/target")) {
+			case EditorExportUWP::ARM: {
+				r_features->push_back("arm");
+			} break;
+			case EditorExportUWP::X86: {
+				r_features->push_back("32");
+			} break;
+			case EditorExportUWP::X64: {
+				r_features->push_back("64");
+			} break;
+		}
 	}
 
 	virtual void get_export_options(List<ExportOption> *r_options) {
-		r_options->push_back(ExportOption(PropertyInfo(Variant::INT, "architecture/target", PROPERTY_HINT_ENUM, "ARM,x86,x64"), 1));
+		r_options->push_back(ExportOption(PropertyInfo(Variant::INT, "architecture/target", PROPERTY_HINT_ENUM, "arm,x86,x64"), 1));
 
 		r_options->push_back(ExportOption(PropertyInfo(Variant::STRING, "command_line/extra_args"), ""));
 
-		r_options->push_back(ExportOption(PropertyInfo(Variant::STRING, "package/display_name"), ""));
-		r_options->push_back(ExportOption(PropertyInfo(Variant::STRING, "package/short_name"), "Godot"));
-		r_options->push_back(ExportOption(PropertyInfo(Variant::STRING, "package/unique_name"), "Godot.Engine"));
-		r_options->push_back(ExportOption(PropertyInfo(Variant::STRING, "package/description"), "Godot Engine"));
-		r_options->push_back(ExportOption(PropertyInfo(Variant::STRING, "package/publisher"), "CN=GodotEngine"));
-		r_options->push_back(ExportOption(PropertyInfo(Variant::STRING, "package/publisher_display_name"), "Godot Engine"));
+		r_options->push_back(ExportOption(PropertyInfo(Variant::STRING, "package/display_name", PROPERTY_HINT_PLACEHOLDER_TEXT, "Game Name"), ""));
+		r_options->push_back(ExportOption(PropertyInfo(Variant::STRING, "package/short_name", PROPERTY_HINT_PLACEHOLDER_TEXT, "Game Name"), ""));
+		r_options->push_back(ExportOption(PropertyInfo(Variant::STRING, "package/unique_name", PROPERTY_HINT_PLACEHOLDER_TEXT, "Game.Name"), ""));
+		r_options->push_back(ExportOption(PropertyInfo(Variant::STRING, "package/description"), ""));
+		r_options->push_back(ExportOption(PropertyInfo(Variant::STRING, "package/publisher", PROPERTY_HINT_PLACEHOLDER_TEXT, "CN=CompanyName"), ""));
+		r_options->push_back(ExportOption(PropertyInfo(Variant::STRING, "package/publisher_display_name", PROPERTY_HINT_PLACEHOLDER_TEXT, "Company Name"), ""));
 
-		r_options->push_back(ExportOption(PropertyInfo(Variant::STRING, "identity/product_guid"), "00000000-0000-0000-0000-000000000000"));
-		r_options->push_back(ExportOption(PropertyInfo(Variant::STRING, "identity/publisher_guid"), "00000000-0000-0000-0000-000000000000"));
+		r_options->push_back(ExportOption(PropertyInfo(Variant::STRING, "identity/product_guid", PROPERTY_HINT_PLACEHOLDER_TEXT, "00000000-0000-0000-0000-000000000000"), ""));
+		r_options->push_back(ExportOption(PropertyInfo(Variant::STRING, "identity/publisher_guid", PROPERTY_HINT_PLACEHOLDER_TEXT, "00000000-0000-0000-0000-000000000000"), ""));
+
+		r_options->push_back(ExportOption(PropertyInfo(Variant::STRING, "signing/certificate", PROPERTY_HINT_GLOBAL_FILE, "*.pfx"), ""));
+		r_options->push_back(ExportOption(PropertyInfo(Variant::STRING, "signing/password"), ""));
+		r_options->push_back(ExportOption(PropertyInfo(Variant::INT, "signing/algorithm", PROPERTY_HINT_ENUM, "MD5,SHA1,SHA256"), 2));
 
 		r_options->push_back(ExportOption(PropertyInfo(Variant::INT, "version/major"), 1));
 		r_options->push_back(ExportOption(PropertyInfo(Variant::INT, "version/minor"), 0));
@@ -1064,10 +1089,10 @@ public:
 		r_options->push_back(ExportOption(PropertyInfo(Variant::BOOL, "tiles/show_name_on_wide310x150"), false));
 		r_options->push_back(ExportOption(PropertyInfo(Variant::BOOL, "tiles/show_name_on_square310x310"), false));
 
-		r_options->push_back(ExportOption(PropertyInfo(Variant::STRING, "custom_template/debug", PROPERTY_HINT_GLOBAL_FILE, "zip"), ""));
-		r_options->push_back(ExportOption(PropertyInfo(Variant::STRING, "custom_template/release", PROPERTY_HINT_GLOBAL_FILE, "zip"), ""));
+		r_options->push_back(ExportOption(PropertyInfo(Variant::STRING, "custom_template/debug", PROPERTY_HINT_GLOBAL_FILE, "*.zip"), ""));
+		r_options->push_back(ExportOption(PropertyInfo(Variant::STRING, "custom_template/release", PROPERTY_HINT_GLOBAL_FILE, "*.zip"), ""));
 
-		// Capabilites
+		// Capabilities
 		const char **basic = uwp_capabilities;
 		while (*basic) {
 			r_options->push_back(ExportOption(PropertyInfo(Variant::BOOL, "capabilities/" + String(*basic).camelcase_to_underscore(false)), false));
@@ -1109,7 +1134,7 @@ public:
 			} break;
 		}
 
-		if (!exists_export_template("uwp_" + platform_infix + "_debug.zip", &err) || !exists_export_template("uwp_" + platform_infix + "_debug.zip", &err)) {
+		if (!exists_export_template("uwp_" + platform_infix + "_debug.zip", &err) || !exists_export_template("uwp_" + platform_infix + "_release.zip", &err)) {
 			valid = false;
 			r_missing_templates = true;
 		}
@@ -1301,7 +1326,7 @@ public:
 			if (do_read) {
 				data.resize(info.uncompressed_size);
 				unzOpenCurrentFile(pkg);
-				unzReadCurrentFile(pkg, data.ptr(), data.size());
+				unzReadCurrentFile(pkg, data.ptrw(), data.size());
 				unzCloseCurrentFile(pkg);
 			}
 
@@ -1341,15 +1366,15 @@ public:
 
 		// Argc
 		clf.resize(4);
-		encode_uint32(cl.size(), clf.ptr());
+		encode_uint32(cl.size(), clf.ptrw());
 
 		for (int i = 0; i < cl.size(); i++) {
 
 			CharString txt = cl[i].utf8();
 			int base = clf.size();
 			clf.resize(base + 4 + txt.length());
-			encode_uint32(txt.length(), &clf[base]);
-			copymem(&clf[base + 4], txt.ptr(), txt.length());
+			encode_uint32(txt.length(), &clf.write[base]);
+			copymem(&clf.write[base + 4], txt.ptr(), txt.length());
 			print_line(itos(i) + " param: " + cl[i]);
 		}
 
@@ -1370,6 +1395,58 @@ public:
 
 		packager.finish();
 
+#ifdef WINDOWS_ENABLED
+		// Sign with signtool
+		String signtool_path = EditorSettings::get_singleton()->get("export/uwp/signtool");
+		if (signtool_path == String()) {
+			return OK;
+		}
+
+		if (!FileAccess::exists(signtool_path)) {
+			ERR_PRINTS("Could not find signtool executable at " + signtool_path + ", aborting.");
+			return ERR_FILE_NOT_FOUND;
+		}
+
+		static String algs[] = { "MD5", "SHA1", "SHA256" };
+
+		String cert_path = EditorSettings::get_singleton()->get("export/uwp/debug_certificate");
+		String cert_pass = EditorSettings::get_singleton()->get("export/uwp/debug_password");
+		int cert_alg = EditorSettings::get_singleton()->get("export/uwp/debug_algorithm");
+
+		if (!p_debug) {
+			cert_path = p_preset->get("signing/certificate");
+			cert_pass = p_preset->get("signing/password");
+			cert_alg = p_preset->get("signing/algorithm");
+		}
+
+		if (cert_path == String()) {
+			return OK; // Certificate missing, don't try to sign
+		}
+
+		if (!FileAccess::exists(cert_path)) {
+			ERR_PRINTS("Could not find certificate file at " + cert_path + ", aborting.");
+			return ERR_FILE_NOT_FOUND;
+		}
+
+		if (cert_alg < 0 || cert_alg > 2) {
+			ERR_PRINTS("Invalid certificate algorithm " + itos(cert_alg) + ", aborting.");
+			return ERR_INVALID_DATA;
+		}
+
+		List<String> args;
+		args.push_back("sign");
+		args.push_back("/fd");
+		args.push_back(algs[cert_alg]);
+		args.push_back("/a");
+		args.push_back("/f");
+		args.push_back(cert_path);
+		args.push_back("/p");
+		args.push_back(cert_pass);
+		args.push_back(p_path);
+
+		OS::get_singleton()->execute(signtool_path, args, true);
+#endif // WINDOWS_ENABLED
+
 		return OK;
 	}
 
@@ -1377,6 +1454,9 @@ public:
 
 		r_features->push_back("pc");
 		r_features->push_back("UWP");
+	}
+
+	virtual void resolve_platform_feature_priorities(const Ref<EditorExportPreset> &p_preset, Set<String> &p_features) {
 	}
 
 	EditorExportUWP() {
@@ -1387,6 +1467,18 @@ public:
 };
 
 void register_uwp_exporter() {
-	Ref<EditorExportUWP> exporter = Ref<EditorExportUWP>(memnew(EditorExportUWP));
+
+#ifdef WINDOWS_ENABLED
+	EDITOR_DEF("export/uwp/signtool", "");
+	EditorSettings::get_singleton()->add_property_hint(PropertyInfo(Variant::STRING, "export/uwp/signtool", PROPERTY_HINT_GLOBAL_FILE, "*.exe"));
+	EDITOR_DEF("export/uwp/debug_certificate", "");
+	EditorSettings::get_singleton()->add_property_hint(PropertyInfo(Variant::STRING, "export/uwp/debug_certificate", PROPERTY_HINT_GLOBAL_FILE, "*.pfx"));
+	EDITOR_DEF("export/uwp/debug_password", "");
+	EDITOR_DEF("export/uwp/debug_algorithm", 2); // SHA256 is the default
+	EditorSettings::get_singleton()->add_property_hint(PropertyInfo(Variant::INT, "export/uwp/debug_algorithm", PROPERTY_HINT_ENUM, "MD5,SHA1,SHA256"));
+#endif // WINDOWS_ENABLED
+
+	Ref<EditorExportUWP> exporter;
+	exporter.instance();
 	EditorExport::get_singleton()->add_export_platform(exporter);
 }

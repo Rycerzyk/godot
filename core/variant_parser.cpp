@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2017 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2017 Godot Engine contributors (cf. AUTHORS.md)    */
+/* Copyright (c) 2007-2018 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2018 Godot Engine contributors (cf. AUTHORS.md)    */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -27,12 +27,13 @@
 /* TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE     */
 /* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                */
 /*************************************************************************/
+
 #include "variant_parser.h"
 
+#include "core/io/resource_loader.h"
+#include "core/os/input_event.h"
+#include "core/os/keyboard.h"
 #include "core/string_buffer.h"
-#include "io/resource_loader.h"
-#include "os/input_event.h"
-#include "os/keyboard.h"
 
 CharType VariantParser::StreamFile::get_char() {
 
@@ -177,7 +178,7 @@ Error VariantParser::get_token(Stream *p_stream, Token &r_token, int &line, Stri
 			};
 			case '#': {
 
-				StringBuffer color_str;
+				StringBuffer<> color_str;
 				color_str += '#';
 				while (true) {
 					CharType ch = p_stream->get_char();
@@ -298,7 +299,7 @@ Error VariantParser::get_token(Stream *p_stream, Token &r_token, int &line, Stri
 				if (cchar == '-' || (cchar >= '0' && cchar <= '9')) {
 					//a number
 
-					StringBuffer num;
+					StringBuffer<> num;
 #define READING_SIGN 0
 #define READING_INT 1
 #define READING_DEC 2
@@ -377,7 +378,7 @@ Error VariantParser::get_token(Stream *p_stream, Token &r_token, int &line, Stri
 
 				} else if ((cchar >= 'A' && cchar <= 'Z') || (cchar >= 'a' && cchar <= 'z') || cchar == '_') {
 
-					StringBuffer id;
+					StringBuffer<> id;
 					bool first = true;
 
 					while ((cchar >= 'A' && cchar <= 'Z') || (cchar >= 'a' && cchar <= 'z') || cchar == '_' || (!first && cchar >= '0' && cchar <= '9')) {
@@ -595,7 +596,7 @@ Error VariantParser::parse_value(Token &token, Variant &value, Stream *p_stream,
 			value = Quat(args[0], args[1], args[2], args[3]);
 			return OK;
 
-		} else if (id == "Rect3" || id == "AABB") {
+		} else if (id == "AABB" || id == "Rect3") {
 
 			Vector<float> args;
 			Error err = _parse_construct<float>(p_stream, args, line, r_err_str);
@@ -606,7 +607,7 @@ Error VariantParser::parse_value(Token &token, Variant &value, Stream *p_stream,
 				r_err_str = "Expected 6 arguments for constructor";
 			}
 
-			value = Rect3(Vector3(args[0], args[1], args[2]), Vector3(args[3], args[4], args[5]));
+			value = AABB(Vector3(args[0], args[1], args[2]), Vector3(args[3], args[4], args[5]));
 			return OK;
 
 		} else if (id == "Basis" || id == "Matrix3") { //compatibility
@@ -1428,10 +1429,10 @@ Error VariantParser::_parse_tag(Token &token, Stream *p_stream, int &line, Strin
 			break;
 
 		if (parsing_tag && token.type == TK_PERIOD) {
-			r_tag.name += "."; //support tags such as [someprop.Anroid] for specific platforms
+			r_tag.name += "."; //support tags such as [someprop.Android] for specific platforms
 			get_token(p_stream, token, line, r_err_str);
 		} else if (parsing_tag && token.type == TK_COLON) {
-			r_tag.name += ":"; //support tags such as [someprop.Anroid] for specific platforms
+			r_tag.name += ":"; //support tags such as [someprop.Android] for specific platforms
 			get_token(p_stream, token, line, r_err_str);
 		} else {
 			parsing_tag = false;
@@ -1634,10 +1635,10 @@ Error VariantWriter::write(const Variant &p_variant, StoreStringFunc p_store_str
 			p_store_string_func(p_store_string_ud, "Plane( " + rtosfix(p.normal.x) + ", " + rtosfix(p.normal.y) + ", " + rtosfix(p.normal.z) + ", " + rtosfix(p.d) + " )");
 
 		} break;
-		case Variant::RECT3: {
+		case Variant::AABB: {
 
-			Rect3 aabb = p_variant;
-			p_store_string_func(p_store_string_ud, "Rect3( " + rtosfix(aabb.position.x) + ", " + rtosfix(aabb.position.y) + ", " + rtosfix(aabb.position.z) + ", " + rtosfix(aabb.size.x) + ", " + rtosfix(aabb.size.y) + ", " + rtosfix(aabb.size.z) + " )");
+			AABB aabb = p_variant;
+			p_store_string_func(p_store_string_ud, "AABB( " + rtosfix(aabb.position.x) + ", " + rtosfix(aabb.position.y) + ", " + rtosfix(aabb.position.z) + ", " + rtosfix(aabb.size.x) + ", " + rtosfix(aabb.size.y) + ", " + rtosfix(aabb.size.z) + " )");
 
 		} break;
 		case Variant::QUAT: {

@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2017 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2017 Godot Engine contributors (cf. AUTHORS.md)    */
+/* Copyright (c) 2007-2018 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2018 Godot Engine contributors (cf. AUTHORS.md)    */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -27,8 +27,11 @@
 /* TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE     */
 /* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                */
 /*************************************************************************/
+
 #include "file_access_compressed.h"
-#include "print_string.h"
+
+#include "core/print_string.h"
+
 void FileAccessCompressed::configure(const String &p_magic, Compression::Mode p_mode, int p_block_size) {
 
 	magic = p_magic.ascii().get_data();
@@ -51,7 +54,7 @@ void FileAccessCompressed::configure(const String &p_magic, Compression::Mode p_
 		if (write_max > write_buffer_size) {                \
 			write_buffer_size = next_power_of_2(write_max); \
 			buffer.resize(write_buffer_size);               \
-			write_ptr = buffer.ptr();                       \
+			write_ptr = buffer.ptrw();                      \
 		}                                                   \
 	}
 
@@ -76,14 +79,14 @@ Error FileAccessCompressed::open_after_magic(FileAccess *p_base) {
 
 	comp_buffer.resize(max_bs);
 	buffer.resize(block_size);
-	read_ptr = buffer.ptr();
-	f->get_buffer(comp_buffer.ptr(), read_blocks[0].csize);
+	read_ptr = buffer.ptrw();
+	f->get_buffer(comp_buffer.ptrw(), read_blocks[0].csize);
 	at_end = false;
 	read_eof = false;
 	read_block_count = bc;
 	read_block_size = read_blocks.size() == 1 ? read_total : block_size;
 
-	Compression::decompress(buffer.ptr(), read_block_size, comp_buffer.ptr(), read_blocks[0].csize, cmode);
+	Compression::decompress(buffer.ptrw(), read_block_size, comp_buffer.ptr(), read_blocks[0].csize, cmode);
 	read_block = 0;
 	read_pos = 0;
 
@@ -114,7 +117,7 @@ Error FileAccessCompressed::_open(const String &p_path, int p_mode_flags) {
 		write_buffer_size = 256;
 		buffer.resize(256);
 		write_max = 0;
-		write_ptr = buffer.ptr();
+		write_ptr = buffer.ptrw();
 
 		//don't store anything else unless it's done saving!
 	} else {
@@ -160,7 +163,7 @@ void FileAccessCompressed::close() {
 
 			Vector<uint8_t> cblock;
 			cblock.resize(Compression::get_max_compressed_buffer_size(bl, cmode));
-			int s = Compression::compress(cblock.ptr(), bp, bl, cmode);
+			int s = Compression::compress(cblock.ptrw(), bp, bl, cmode);
 
 			f->store_buffer(cblock.ptr(), s);
 			block_sizes.push_back(s);
@@ -211,8 +214,8 @@ void FileAccessCompressed::seek(size_t p_position) {
 
 				read_block = block_idx;
 				f->seek(read_blocks[read_block].offset);
-				f->get_buffer(comp_buffer.ptr(), read_blocks[read_block].csize);
-				Compression::decompress(buffer.ptr(), read_blocks.size() == 1 ? read_total : block_size, comp_buffer.ptr(), read_blocks[read_block].csize, cmode);
+				f->get_buffer(comp_buffer.ptrw(), read_blocks[read_block].csize);
+				Compression::decompress(buffer.ptrw(), read_blocks.size() == 1 ? read_total : block_size, comp_buffer.ptr(), read_blocks[read_block].csize, cmode);
 				read_block_size = read_block == read_block_count - 1 ? read_total % block_size : block_size;
 			}
 
@@ -282,15 +285,14 @@ uint8_t FileAccessCompressed::get_8() const {
 
 		if (read_block < read_block_count) {
 			//read another block of compressed data
-			f->get_buffer(comp_buffer.ptr(), read_blocks[read_block].csize);
-			Compression::decompress(buffer.ptr(), read_blocks.size() == 1 ? read_total : block_size, comp_buffer.ptr(), read_blocks[read_block].csize, cmode);
+			f->get_buffer(comp_buffer.ptrw(), read_blocks[read_block].csize);
+			Compression::decompress(buffer.ptrw(), read_blocks.size() == 1 ? read_total : block_size, comp_buffer.ptr(), read_blocks[read_block].csize, cmode);
 			read_block_size = read_block == read_block_count - 1 ? read_total % block_size : block_size;
 			read_pos = 0;
 
 		} else {
 			read_block--;
 			at_end = true;
-			ret = 0;
 		}
 	}
 
@@ -315,8 +317,8 @@ int FileAccessCompressed::get_buffer(uint8_t *p_dst, int p_length) const {
 
 			if (read_block < read_block_count) {
 				//read another block of compressed data
-				f->get_buffer(comp_buffer.ptr(), read_blocks[read_block].csize);
-				Compression::decompress(buffer.ptr(), read_blocks.size() == 1 ? read_total : block_size, comp_buffer.ptr(), read_blocks[read_block].csize, cmode);
+				f->get_buffer(comp_buffer.ptrw(), read_blocks[read_block].csize);
+				Compression::decompress(buffer.ptrw(), read_blocks.size() == 1 ? read_total : block_size, comp_buffer.ptr(), read_blocks[read_block].csize, cmode);
 				read_block_size = read_block == read_block_count - 1 ? read_total % block_size : block_size;
 				read_pos = 0;
 
@@ -371,24 +373,23 @@ uint64_t FileAccessCompressed::_get_modified_time(const String &p_file) {
 		return 0;
 }
 
-FileAccessCompressed::FileAccessCompressed() {
-
-	f = NULL;
-	magic = "GCMP";
-	cmode = Compression::MODE_ZSTD;
-	writing = false;
-	write_ptr = 0;
-	write_buffer_size = 0;
-	write_max = 0;
-	block_size = 0;
-	read_eof = false;
-	at_end = false;
-	read_total = 0;
-	read_ptr = NULL;
-	read_block = 0;
-	read_block_count = 0;
-	read_block_size = 0;
-	read_pos = 0;
+FileAccessCompressed::FileAccessCompressed() :
+		cmode(Compression::MODE_ZSTD),
+		writing(false),
+		write_ptr(0),
+		write_buffer_size(0),
+		write_max(0),
+		block_size(0),
+		read_eof(false),
+		at_end(false),
+		read_ptr(NULL),
+		read_block(0),
+		read_block_count(0),
+		read_block_size(0),
+		read_pos(0),
+		read_total(0),
+		magic("GCMP"),
+		f(NULL) {
 }
 
 FileAccessCompressed::~FileAccessCompressed() {

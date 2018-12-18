@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2017 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2017 Godot Engine contributors (cf. AUTHORS.md)    */
+/* Copyright (c) 2007-2018 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2018 Godot Engine contributors (cf. AUTHORS.md)    */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -27,10 +27,10 @@
 /* TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE     */
 /* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                */
 /*************************************************************************/
+
 #include "collision_solver_sw.h"
 #include "collision_solver_sat.h"
 
-#include "collision_solver_sat.h"
 #include "gjk_epa.h"
 
 #define collision_solver sat_calculate_penetration
@@ -89,6 +89,10 @@ bool CollisionSolverSW::solve_ray(const ShapeSW *p_shape_A, const Transform &p_t
 		return false;
 
 	Vector3 support_B = p_transform_B.xform(p);
+	if (ray->get_slips_on_slope()) {
+		Vector3 global_n = ai.basis.xform_inv(n).normalized();
+		support_B = support_A + (support_B - support_A).length() * global_n;
+	}
 
 	if (p_result_callback) {
 		if (p_swap_result)
@@ -152,7 +156,7 @@ bool CollisionSolverSW::solve_concave(const ShapeSW *p_shape_A, const Transform 
 
 	//quickly compute a local AABB
 
-	Rect3 local_aabb;
+	AABB local_aabb;
 	for (int i = 0; i < 3; i++) {
 
 		Vector3 axis(p_transform_B.basis.get_axis(i));
@@ -171,7 +175,6 @@ bool CollisionSolverSW::solve_concave(const ShapeSW *p_shape_A, const Transform 
 	}
 
 	concave_B->cull(local_aabb, concave_callback, &cinfo);
-	//print_line("COL AABB TESTS: "+itos(cinfo.aabb_tests));
 
 	return cinfo.collided;
 }
@@ -291,7 +294,7 @@ bool CollisionSolverSW::solve_distance_plane(const ShapeSW *p_shape_A, const Tra
 	return collided;
 }
 
-bool CollisionSolverSW::solve_distance(const ShapeSW *p_shape_A, const Transform &p_transform_A, const ShapeSW *p_shape_B, const Transform &p_transform_B, Vector3 &r_point_A, Vector3 &r_point_B, const Rect3 &p_concave_hint, Vector3 *r_sep_axis) {
+bool CollisionSolverSW::solve_distance(const ShapeSW *p_shape_A, const Transform &p_transform_A, const ShapeSW *p_shape_B, const Transform &p_transform_B, Vector3 &r_point_A, Vector3 &r_point_B, const AABB &p_concave_hint, Vector3 *r_sep_axis) {
 
 	if (p_shape_A->is_concave())
 		return false;
@@ -328,14 +331,14 @@ bool CollisionSolverSW::solve_distance(const ShapeSW *p_shape_A, const Transform
 
 		//quickly compute a local AABB
 
-		bool use_cc_hint = p_concave_hint != Rect3();
-		Rect3 cc_hint_aabb;
+		bool use_cc_hint = p_concave_hint != AABB();
+		AABB cc_hint_aabb;
 		if (use_cc_hint) {
 			cc_hint_aabb = p_concave_hint;
 			cc_hint_aabb.position -= p_transform_B.origin;
 		}
 
-		Rect3 local_aabb;
+		AABB local_aabb;
 		for (int i = 0; i < 3; i++) {
 
 			Vector3 axis(p_transform_B.basis.get_axis(i));
@@ -359,12 +362,9 @@ bool CollisionSolverSW::solve_distance(const ShapeSW *p_shape_A, const Transform
 
 		concave_B->cull(local_aabb, concave_distance_callback, &cinfo);
 		if (!cinfo.collided) {
-			//print_line(itos(cinfo.tested));
 			r_point_A = cinfo.close_A;
 			r_point_B = cinfo.close_B;
 		}
-
-		//print_line("DIST AABB TESTS: "+itos(cinfo.aabb_tests));
 
 		return !cinfo.collided;
 	} else {

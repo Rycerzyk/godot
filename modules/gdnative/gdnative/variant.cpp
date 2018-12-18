@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2017 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2017 Godot Engine contributors (cf. AUTHORS.md)    */
+/* Copyright (c) 2007-2018 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2018 Godot Engine contributors (cf. AUTHORS.md)    */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -27,6 +27,7 @@
 /* TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE     */
 /* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                */
 /*************************************************************************/
+
 #include "gdnative/variant.h"
 
 #include "core/reference.h"
@@ -118,10 +119,10 @@ void GDAPI godot_variant_new_quat(godot_variant *r_dest, const godot_quat *p_qua
 	memnew_placement_custom(dest, Variant, Variant(*quat));
 }
 
-void GDAPI godot_variant_new_rect3(godot_variant *r_dest, const godot_rect3 *p_rect3) {
+void GDAPI godot_variant_new_aabb(godot_variant *r_dest, const godot_aabb *p_aabb) {
 	Variant *dest = (Variant *)r_dest;
-	Rect3 *rect3 = (Rect3 *)p_rect3;
-	memnew_placement_custom(dest, Variant, Variant(*rect3));
+	AABB *aabb = (AABB *)p_aabb;
+	memnew_placement_custom(dest, Variant, Variant(*aabb));
 }
 
 void GDAPI godot_variant_new_basis(godot_variant *r_dest, const godot_basis *p_basis) {
@@ -304,10 +305,10 @@ godot_quat GDAPI godot_variant_as_quat(const godot_variant *p_self) {
 	return raw_dest;
 }
 
-godot_rect3 GDAPI godot_variant_as_rect3(const godot_variant *p_self) {
-	godot_rect3 raw_dest;
+godot_aabb GDAPI godot_variant_as_aabb(const godot_variant *p_self) {
+	godot_aabb raw_dest;
 	const Variant *self = (const Variant *)p_self;
-	Rect3 *dest = (Rect3 *)&raw_dest;
+	AABB *dest = (AABB *)&raw_dest;
 	*dest = *self;
 	return raw_dest;
 }
@@ -486,6 +487,24 @@ godot_bool GDAPI godot_variant_booleanize(const godot_variant *p_self) {
 void GDAPI godot_variant_destroy(godot_variant *p_self) {
 	Variant *self = (Variant *)p_self;
 	self->~Variant();
+}
+
+// GDNative core 1.1
+
+godot_string GDAPI godot_variant_get_operator_name(godot_variant_operator p_op) {
+	Variant::Operator op = (Variant::Operator)p_op;
+	godot_string raw_dest;
+	String *dest = (String *)&raw_dest;
+	memnew_placement(dest, String(Variant::get_operator_name(op))); // operator = is overloaded by String
+	return raw_dest;
+}
+
+void GDAPI godot_variant_evaluate(godot_variant_operator p_op, const godot_variant *p_a, const godot_variant *p_b, godot_variant *r_ret, godot_bool *r_valid) {
+	Variant::Operator op = (Variant::Operator)p_op;
+	const Variant *a = (const Variant *)p_a;
+	const Variant *b = (const Variant *)p_b;
+	Variant *ret = (Variant *)r_ret;
+	Variant::evaluate(op, a, b, *ret, *r_valid);
 }
 
 #ifdef __cplusplus

@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2017 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2017 Godot Engine contributors (cf. AUTHORS.md)    */
+/* Copyright (c) 2007-2018 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2018 Godot Engine contributors (cf. AUTHORS.md)    */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -27,10 +27,11 @@
 /* TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE     */
 /* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                */
 /*************************************************************************/
+
 #ifndef SCENE_RESOURCES_COLOR_RAMP_H_
 #define SCENE_RESOURCES_COLOR_RAMP_H_
 
-#include "resource.h"
+#include "core/resource.h"
 
 class Gradient : public Resource {
 	GDCLASS(Gradient, Resource);
@@ -97,7 +98,7 @@ public:
 
 		while (low <= high) {
 			middle = (low + high) / 2;
-			Point &point = points[middle];
+			const Point &point = points[middle];
 			if (point.offset > p_offset) {
 				high = middle - 1; //search low end of array
 			} else if (point.offset < p_offset) {
@@ -117,8 +118,8 @@ public:
 			return points[points.size() - 1].color;
 		if (first < 0)
 			return points[0].color;
-		Point &pointFirst = points[first];
-		Point &pointSecond = points[second];
+		const Point &pointFirst = points[first];
+		const Point &pointSecond = points[second];
 		return pointFirst.color.linear_interpolate(pointSecond.color, (p_offset - pointFirst.offset) / (pointSecond.offset - pointFirst.offset));
 	}
 

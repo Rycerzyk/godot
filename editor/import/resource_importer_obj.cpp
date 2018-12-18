@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2017 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2017 Godot Engine contributors (cf. AUTHORS.md)    */
+/* Copyright (c) 2007-2018 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2018 Godot Engine contributors (cf. AUTHORS.md)    */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -27,10 +27,11 @@
 /* TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE     */
 /* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                */
 /*************************************************************************/
+
 #include "resource_importer_obj.h"
 
-#include "io/resource_saver.h"
-#include "os/file_access.h"
+#include "core/io/resource_saver.h"
+#include "core/os/file_access.h"
 #include "scene/3d/mesh_instance.h"
 #include "scene/3d/spatial.h"
 #include "scene/resources/mesh.h"
@@ -58,10 +59,11 @@ static Error _parse_material_library(const String &p_path, Map<String, Ref<Spati
 
 			current_name = l.replace("newmtl", "").strip_edges();
 			current.instance();
+			current->set_name(current_name);
 			material_map[current_name] = current;
 		} else if (l.begins_with("Ka ")) {
 			//uv
-			print_line("Warning: Ambient light for material '" + current_name + "' is ignored in PBR");
+			WARN_PRINTS("OBJ: Ambient light for material '" + current_name + "' is ignored in PBR");
 
 		} else if (l.begins_with("Kd ")) {
 			//normal
@@ -117,14 +119,19 @@ static Error _parse_material_library(const String &p_path, Map<String, Ref<Spati
 
 		} else if (l.begins_with("map_Ka ")) {
 			//uv
-			print_line("Warning: Ambient light texture for material '" + current_name + "' is ignored in PBR");
+			WARN_PRINTS("OBJ: Ambient light texture for material '" + current_name + "' is ignored in PBR");
 
 		} else if (l.begins_with("map_Kd ")) {
 			//normal
 			ERR_FAIL_COND_V(current.is_null(), ERR_FILE_CORRUPT);
 
 			String p = l.replace("map_Kd", "").replace("\\", "/").strip_edges();
-			String path = base_path.plus_file(p);
+			String path;
+			if (p.is_abs_path()) {
+				path = p;
+			} else {
+				path = base_path.plus_file(p);
+			}
 
 			Ref<Texture> texture = ResourceLoader::load(path);
 
@@ -139,7 +146,12 @@ static Error _parse_material_library(const String &p_path, Map<String, Ref<Spati
 			ERR_FAIL_COND_V(current.is_null(), ERR_FILE_CORRUPT);
 
 			String p = l.replace("map_Ks", "").replace("\\", "/").strip_edges();
-			String path = base_path.plus_file(p);
+			String path;
+			if (p.is_abs_path()) {
+				path = p;
+			} else {
+				path = base_path.plus_file(p);
+			}
 
 			Ref<Texture> texture = ResourceLoader::load(path);
 
@@ -154,7 +166,12 @@ static Error _parse_material_library(const String &p_path, Map<String, Ref<Spati
 			ERR_FAIL_COND_V(current.is_null(), ERR_FILE_CORRUPT);
 
 			String p = l.replace("map_Ns", "").replace("\\", "/").strip_edges();
-			String path = base_path.plus_file(p);
+			String path;
+			if (p.is_abs_path()) {
+				path = p;
+			} else {
+				path = base_path.plus_file(p);
+			}
 
 			Ref<Texture> texture = ResourceLoader::load(path);
 
@@ -186,7 +203,7 @@ static Error _parse_material_library(const String &p_path, Map<String, Ref<Spati
 	return OK;
 }
 
-static Error _parse_obj(const String &p_path, List<Ref<Mesh> > &r_meshes, bool p_single_mesh, bool p_generate_tangents, List<String> *r_missing_deps) {
+static Error _parse_obj(const String &p_path, List<Ref<Mesh> > &r_meshes, bool p_single_mesh, bool p_generate_tangents, bool p_optimize, Vector3 p_scale_mesh, List<String> *r_missing_deps) {
 
 	FileAccessRef f = FileAccess::open(p_path, FileAccess::READ);
 
@@ -196,7 +213,10 @@ static Error _parse_obj(const String &p_path, List<Ref<Mesh> > &r_meshes, bool p
 	mesh.instance();
 
 	bool generate_tangents = p_generate_tangents;
+	Vector3 scale_mesh = p_scale_mesh;
 	bool flip_faces = false;
+	int mesh_flags = p_optimize ? Mesh::ARRAY_COMPRESS_DEFAULT : 0;
+
 	//bool flip_faces = p_options["force/flip_faces"];
 	//bool force_smooth = p_options["force/smooth_shading"];
 	//bool weld_vertices = p_options["force/weld_vertices"];
@@ -219,15 +239,22 @@ static Error _parse_obj(const String &p_path, List<Ref<Mesh> > &r_meshes, bool p
 	while (true) {
 
 		String l = f->get_line().strip_edges();
+		while (l.length() && l[l.length() - 1] == '\\') {
+			String add = f->get_line().strip_edges();
+			l += add;
+			if (add == String()) {
+				break;
+			}
+		}
 
 		if (l.begins_with("v ")) {
 			//vertex
 			Vector<String> v = l.split(" ", false);
 			ERR_FAIL_COND_V(v.size() < 4, ERR_FILE_CORRUPT);
 			Vector3 vtx;
-			vtx.x = v[1].to_float();
-			vtx.y = v[2].to_float();
-			vtx.z = v[3].to_float();
+			vtx.x = v[1].to_float() * scale_mesh.x;
+			vtx.y = v[2].to_float() * scale_mesh.y;
+			vtx.z = v[3].to_float() * scale_mesh.z;
 			vertices.push_back(vtx);
 		} else if (l.begins_with("vt ")) {
 			//uv
@@ -259,10 +286,12 @@ static Error _parse_obj(const String &p_path, List<Ref<Mesh> > &r_meshes, bool p
 			face[0] = v[1].split("/");
 			face[1] = v[2].split("/");
 			ERR_FAIL_COND_V(face[0].size() == 0, ERR_FILE_CORRUPT);
+
 			ERR_FAIL_COND_V(face[0].size() != face[1].size(), ERR_FILE_CORRUPT);
 			for (int i = 2; i < v.size() - 1; i++) {
 
 				face[2] = v[i + 1].split("/");
+
 				ERR_FAIL_COND_V(face[0].size() != face[2].size(), ERR_FILE_CORRUPT);
 				for (int j = 0; j < 3; j++) {
 
@@ -321,14 +350,14 @@ static Error _parse_obj(const String &p_path, List<Ref<Mesh> > &r_meshes, bool p
 
 				surf_tool->index();
 
-				print_line("current material library " + current_material_library + " has " + itos(material_map.has(current_material_library)));
-				print_line("current material " + current_material + " has " + itos(material_map.has(current_material_library) && material_map[current_material_library].has(current_material)));
+				print_verbose("OBJ: Current material library " + current_material_library + " has " + itos(material_map.has(current_material_library)));
+				print_verbose("OBJ: Current material " + current_material + " has " + itos(material_map.has(current_material_library) && material_map[current_material_library].has(current_material)));
 
 				if (material_map.has(current_material_library) && material_map[current_material_library].has(current_material)) {
 					surf_tool->set_material(material_map[current_material_library][current_material]);
 				}
 
-				mesh = surf_tool->commit(mesh);
+				mesh = surf_tool->commit(mesh, mesh_flags);
 
 				if (current_material != String()) {
 					mesh->surface_set_name(mesh->get_surface_count() - 1, current_material.get_basename());
@@ -336,7 +365,7 @@ static Error _parse_obj(const String &p_path, List<Ref<Mesh> > &r_meshes, bool p
 					mesh->surface_set_name(mesh->get_surface_count() - 1, current_group);
 				}
 
-				print_line("Added surface :" + mesh->surface_get_name(mesh->get_surface_count() - 1));
+				print_verbose("OBJ: Added surface :" + mesh->surface_get_name(mesh->get_surface_count() - 1));
 				surf_tool->clear();
 				surf_tool->begin(Mesh::PRIMITIVE_TRIANGLES);
 			}
@@ -399,7 +428,7 @@ Node *EditorOBJImporter::import_scene(const String &p_path, uint32_t p_flags, in
 
 	List<Ref<Mesh> > meshes;
 
-	Error err = _parse_obj(p_path, meshes, false, p_flags & IMPORT_GENERATE_TANGENT_ARRAYS, r_missing_deps);
+	Error err = _parse_obj(p_path, meshes, false, p_flags & IMPORT_GENERATE_TANGENT_ARRAYS, p_flags & IMPORT_USE_COMPRESSION, Vector3(1, 1, 1), r_missing_deps);
 
 	if (err != OK) {
 		if (r_err) {
@@ -413,6 +442,7 @@ Node *EditorOBJImporter::import_scene(const String &p_path, uint32_t p_flags, in
 	for (List<Ref<Mesh> >::Element *E = meshes.front(); E; E = E->next()) {
 
 		MeshInstance *mi = memnew(MeshInstance);
+		mi->set_mesh(E->get());
 		mi->set_name(E->get()->get_name());
 		scene->add_child(mi);
 		mi->set_owner(scene);
@@ -424,7 +454,7 @@ Node *EditorOBJImporter::import_scene(const String &p_path, uint32_t p_flags, in
 
 	return scene;
 }
-Ref<Animation> EditorOBJImporter::import_animation(const String &p_path, uint32_t p_flags) {
+Ref<Animation> EditorOBJImporter::import_animation(const String &p_path, uint32_t p_flags, int p_bake_fps) {
 
 	return Ref<Animation>();
 }
@@ -465,6 +495,8 @@ String ResourceImporterOBJ::get_preset_name(int p_idx) const {
 void ResourceImporterOBJ::get_import_options(List<ImportOption> *r_options, int p_preset) const {
 
 	r_options->push_back(ImportOption(PropertyInfo(Variant::BOOL, "generate_tangents"), true));
+	r_options->push_back(ImportOption(PropertyInfo(Variant::VECTOR3, "scale_mesh"), Vector3(1, 1, 1)));
+	r_options->push_back(ImportOption(PropertyInfo(Variant::BOOL, "optimize_mesh"), true));
 }
 bool ResourceImporterOBJ::get_option_visibility(const String &p_option, const Map<StringName, Variant> &p_options) const {
 
@@ -475,7 +507,7 @@ Error ResourceImporterOBJ::import(const String &p_source_file, const String &p_s
 
 	List<Ref<Mesh> > meshes;
 
-	Error err = _parse_obj(p_source_file, meshes, true, p_options["generate_tangents"], NULL);
+	Error err = _parse_obj(p_source_file, meshes, true, p_options["generate_tangents"], p_options["optimize_mesh"], p_options["scale_mesh"], NULL);
 
 	ERR_FAIL_COND_V(err != OK, err);
 	ERR_FAIL_COND_V(meshes.size() != 1, ERR_BUG);

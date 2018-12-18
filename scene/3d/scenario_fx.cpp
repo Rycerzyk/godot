@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2017 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2017 Godot Engine contributors (cf. AUTHORS.md)    */
+/* Copyright (c) 2007-2018 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2018 Godot Engine contributors (cf. AUTHORS.md)    */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -27,6 +27,7 @@
 /* TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE     */
 /* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                */
 /*************************************************************************/
+
 #include "scenario_fx.h"
 #include "scene/main/viewport.h"
 
@@ -78,7 +79,11 @@ Ref<Environment> WorldEnvironment::get_environment() const {
 
 String WorldEnvironment::get_configuration_warning() const {
 
-	if (/*!is_visible_in_tree() ||*/ !is_inside_tree() || !environment.is_valid())
+	if (!environment.is_valid()) {
+		return TTR("WorldEnvironment needs an Environment resource.");
+	}
+
+	if (/*!is_visible_in_tree() ||*/ !is_inside_tree())
 		return String();
 
 	List<Node *> nodes;
@@ -87,6 +92,11 @@ String WorldEnvironment::get_configuration_warning() const {
 	if (nodes.size() > 1) {
 		return TTR("Only one WorldEnvironment is allowed per scene (or set of instanced scenes).");
 	}
+
+	// Commenting this warning for now, I think it makes no sense. If anyone can figure out what its supposed to do, feedback welcome. Else it should be deprecated.
+	//if (environment.is_valid() && get_viewport() && !get_viewport()->get_camera() && environment->get_background() != Environment::BG_CANVAS) {
+	//	return TTR("This WorldEnvironment is ignored. Either add a Camera (for 3D scenes) or set this environment's Background Mode to Canvas (for 2D scenes).");
+	//}
 
 	return String();
 }

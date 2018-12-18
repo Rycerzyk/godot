@@ -1,10 +1,10 @@
 #!/usr/bin/env python
 
-import os
 Import('env')
 
-def make_debug(target, source, env):
-    os.system('dsymutil %s -o %s.dSYM' % (target[0], target[0]))
+import os
+from platform_methods import run_in_subprocess
+import platform_osx_builders
 
 files = [
     'crash_handler_osx.mm',
@@ -16,7 +16,8 @@ files = [
     'power_osx.cpp',
 ]
 
-binary = env.Program('#bin/godot', files)
-if env["debug_symbols"] == "full" or env["debug_symbols"] == "yes":
-    env.AddPostAction(binary, make_debug)
+prog = env.add_program('#bin/godot', files)
+
+if (env["debug_symbols"] == "full" or env["debug_symbols"] == "yes") and env["separate_debug_symbols"]:
+    env.AddPostAction(prog, run_in_subprocess(platform_osx_builders.make_debug_osx))
 

@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2017 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2017 Godot Engine contributors (cf. AUTHORS.md)    */
+/* Copyright (c) 2007-2018 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2018 Godot Engine contributors (cf. AUTHORS.md)    */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -27,11 +27,12 @@
 /* TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE     */
 /* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                */
 /*************************************************************************/
+
 #include "variant.h"
 
-#include "core_string_names.h"
-#include "object.h"
-#include "script_language.h"
+#include "core/core_string_names.h"
+#include "core/object.h"
+#include "core/script_language.h"
 
 #define CASE_TYPE_ALL(PREFIX, OP) \
 	CASE_TYPE(PREFIX, OP, INT)    \
@@ -48,7 +49,7 @@
 	CASE_TYPE(PREFIX, OP, TRANSFORM2D)        \
 	CASE_TYPE(PREFIX, OP, PLANE)              \
 	CASE_TYPE(PREFIX, OP, QUAT)               \
-	CASE_TYPE(PREFIX, OP, RECT3)              \
+	CASE_TYPE(PREFIX, OP, AABB)               \
 	CASE_TYPE(PREFIX, OP, BASIS)              \
 	CASE_TYPE(PREFIX, OP, TRANSFORM)          \
 	CASE_TYPE(PREFIX, OP, COLOR)              \
@@ -81,7 +82,7 @@
 		TYPE(PREFIX, OP, TRANSFORM2D),        \
 		TYPE(PREFIX, OP, PLANE),              \
 		TYPE(PREFIX, OP, QUAT),               \
-		TYPE(PREFIX, OP, RECT3),              \
+		TYPE(PREFIX, OP, AABB),              \
 		TYPE(PREFIX, OP, BASIS),              \
 		TYPE(PREFIX, OP, TRANSFORM),          \
 		TYPE(PREFIX, OP, COLOR),              \
@@ -146,7 +147,7 @@ Variant::operator bool() const {
 	return booleanize();
 }
 
-// We consider all unitialized or empty types to be false based on the type's
+// We consider all uninitialized or empty types to be false based on the type's
 // zeroiness.
 bool Variant::booleanize() const {
 	return !is_zero();
@@ -176,7 +177,7 @@ bool Variant::booleanize() const {
 	CASE_TYPE(m_prefix, m_op_name, m_name) {                                  \
 		if (p_b.type == INT) _RETURN(p_a._data.m_type m_op p_b._data._int);   \
 		if (p_b.type == REAL) _RETURN(p_a._data.m_type m_op p_b._data._real); \
-		if (p_b.type == NIL) _RETURN(!p_b.type m_op NIL);                     \
+		if (p_b.type == NIL) _RETURN(!(p_b.type m_op NIL));                   \
                                                                               \
 		_RETURN_FAIL                                                          \
 	};
@@ -251,7 +252,7 @@ bool Variant::booleanize() const {
 	CASE_TYPE(m_prefix, m_op_name, m_name) {                                                                                                            \
 		if (p_b.type == STRING) _RETURN(*reinterpret_cast<const m_type *>(p_a._data._mem) m_op *reinterpret_cast<const String *>(p_b._data._mem));      \
 		if (p_b.type == NODE_PATH) _RETURN(*reinterpret_cast<const m_type *>(p_a._data._mem) m_op *reinterpret_cast<const NodePath *>(p_b._data._mem)); \
-		if (p_b.type == NIL) _RETURN(!p_b.type m_op NIL);                                                                                               \
+		if (p_b.type == NIL) _RETURN(!(p_b.type m_op NIL));                                                                                             \
                                                                                                                                                         \
 		_RETURN_FAIL                                                                                                                                    \
 	};
@@ -277,7 +278,7 @@ bool Variant::booleanize() const {
 		if (p_b.type == m_name)                                                                                                \
 			_RETURN(*reinterpret_cast<const m_type *>(p_a._data._mem) m_op *reinterpret_cast<const m_type *>(p_b._data._mem)); \
 		if (p_b.type == NIL)                                                                                                   \
-			_RETURN(!p_b.type m_op NIL);                                                                                       \
+			_RETURN(!(p_b.type m_op NIL));                                                                                     \
                                                                                                                                \
 		_RETURN_FAIL                                                                                                           \
 	};
@@ -322,7 +323,7 @@ bool Variant::booleanize() const {
 		if (p_b.type == m_name)                                          \
 			_RETURN(*p_a._data.m_sub m_op *p_b._data.m_sub);             \
 		if (p_b.type == NIL)                                             \
-			_RETURN(!p_b.type m_op NIL);                                 \
+			_RETURN(!(p_b.type m_op NIL));                               \
                                                                          \
 		_RETURN_FAIL                                                     \
 	}
@@ -338,7 +339,7 @@ bool Variant::booleanize() const {
 	CASE_TYPE(m_prefix, m_op_name, m_name) {                                                     \
 		if (p_b.type == NIL)                                                                     \
 			_RETURN(true)                                                                        \
-		DEFAULT_OP_ARRAY_OP_BODY(m_prefix, m_op_name, m_name, m_type, !=, ==, true, true, false) \
+		DEFAULT_OP_ARRAY_OP_BODY(m_prefix, m_op_name, m_name, m_type, !=, !=, false, true, true) \
 	}
 
 #define DEFAULT_OP_ARRAY_LT(m_prefix, m_op_name, m_name, m_type) \
@@ -465,7 +466,7 @@ void Variant::evaluate(const Operator &p_op, const Variant &p_a,
 			DEFAULT_OP_LOCALMEM_NULL(math, OP_EQUAL, VECTOR3, ==, Vector3);
 			DEFAULT_OP_LOCALMEM_NULL(math, OP_EQUAL, PLANE, ==, Plane);
 			DEFAULT_OP_LOCALMEM_NULL(math, OP_EQUAL, QUAT, ==, Quat);
-			DEFAULT_OP_PTRREF_NULL(math, OP_EQUAL, RECT3, ==, _rect3);
+			DEFAULT_OP_PTRREF_NULL(math, OP_EQUAL, AABB, ==, _aabb);
 			DEFAULT_OP_PTRREF_NULL(math, OP_EQUAL, BASIS, ==, _basis);
 			DEFAULT_OP_PTRREF_NULL(math, OP_EQUAL, TRANSFORM, ==, _transform);
 			DEFAULT_OP_LOCALMEM_NULL(math, OP_EQUAL, COLOR, ==, Color);
@@ -520,7 +521,7 @@ void Variant::evaluate(const Operator &p_op, const Variant &p_a,
 				const Dictionary *arr_a = reinterpret_cast<const Dictionary *>(p_a._data._mem);
 				const Dictionary *arr_b = reinterpret_cast<const Dictionary *>(p_b._data._mem);
 
-				_RETURN((*arr_a == *arr_b) == false);
+				_RETURN(*arr_a != *arr_b);
 			}
 
 			CASE_TYPE(math, OP_NOT_EQUAL, ARRAY) {
@@ -538,12 +539,12 @@ void Variant::evaluate(const Operator &p_op, const Variant &p_a,
 				if (arr_b->size() != l)
 					_RETURN(true);
 				for (int i = 0; i < l; i++) {
-					if (((*arr_a)[i] == (*arr_b)[i])) {
-						_RETURN(false);
+					if (((*arr_a)[i] != (*arr_b)[i])) {
+						_RETURN(true);
 					}
 				}
 
-				_RETURN(true);
+				_RETURN(false);
 			}
 
 			DEFAULT_OP_NUM_NULL(math, OP_NOT_EQUAL, INT, !=, _int);
@@ -555,7 +556,7 @@ void Variant::evaluate(const Operator &p_op, const Variant &p_a,
 			DEFAULT_OP_LOCALMEM_NULL(math, OP_NOT_EQUAL, VECTOR3, !=, Vector3);
 			DEFAULT_OP_LOCALMEM_NULL(math, OP_NOT_EQUAL, PLANE, !=, Plane);
 			DEFAULT_OP_LOCALMEM_NULL(math, OP_NOT_EQUAL, QUAT, !=, Quat);
-			DEFAULT_OP_PTRREF_NULL(math, OP_NOT_EQUAL, RECT3, !=, _rect3);
+			DEFAULT_OP_PTRREF_NULL(math, OP_NOT_EQUAL, AABB, !=, _aabb);
 			DEFAULT_OP_PTRREF_NULL(math, OP_NOT_EQUAL, BASIS, !=, _basis);
 			DEFAULT_OP_PTRREF_NULL(math, OP_NOT_EQUAL, TRANSFORM, !=, _transform);
 			DEFAULT_OP_LOCALMEM_NULL(math, OP_NOT_EQUAL, COLOR, !=, Color);
@@ -629,7 +630,7 @@ void Variant::evaluate(const Operator &p_op, const Variant &p_a,
 			CASE_TYPE(math, OP_LESS, TRANSFORM2D)
 			CASE_TYPE(math, OP_LESS, PLANE)
 			CASE_TYPE(math, OP_LESS, QUAT)
-			CASE_TYPE(math, OP_LESS, RECT3)
+			CASE_TYPE(math, OP_LESS, AABB)
 			CASE_TYPE(math, OP_LESS, BASIS)
 			CASE_TYPE(math, OP_LESS, TRANSFORM)
 			CASE_TYPE(math, OP_LESS, COLOR)
@@ -658,7 +659,7 @@ void Variant::evaluate(const Operator &p_op, const Variant &p_a,
 			CASE_TYPE(math, OP_LESS_EQUAL, TRANSFORM2D)
 			CASE_TYPE(math, OP_LESS_EQUAL, PLANE)
 			CASE_TYPE(math, OP_LESS_EQUAL, QUAT)
-			CASE_TYPE(math, OP_LESS_EQUAL, RECT3)
+			CASE_TYPE(math, OP_LESS_EQUAL, AABB)
 			CASE_TYPE(math, OP_LESS_EQUAL, BASIS)
 			CASE_TYPE(math, OP_LESS_EQUAL, TRANSFORM)
 			CASE_TYPE(math, OP_LESS_EQUAL, COLOR)
@@ -733,7 +734,7 @@ void Variant::evaluate(const Operator &p_op, const Variant &p_a,
 			CASE_TYPE(math, OP_GREATER, TRANSFORM2D)
 			CASE_TYPE(math, OP_GREATER, PLANE)
 			CASE_TYPE(math, OP_GREATER, QUAT)
-			CASE_TYPE(math, OP_GREATER, RECT3)
+			CASE_TYPE(math, OP_GREATER, AABB)
 			CASE_TYPE(math, OP_GREATER, BASIS)
 			CASE_TYPE(math, OP_GREATER, TRANSFORM)
 			CASE_TYPE(math, OP_GREATER, COLOR)
@@ -762,7 +763,7 @@ void Variant::evaluate(const Operator &p_op, const Variant &p_a,
 			CASE_TYPE(math, OP_GREATER_EQUAL, TRANSFORM2D)
 			CASE_TYPE(math, OP_GREATER_EQUAL, PLANE)
 			CASE_TYPE(math, OP_GREATER_EQUAL, QUAT)
-			CASE_TYPE(math, OP_GREATER_EQUAL, RECT3)
+			CASE_TYPE(math, OP_GREATER_EQUAL, AABB)
 			CASE_TYPE(math, OP_GREATER_EQUAL, BASIS)
 			CASE_TYPE(math, OP_GREATER_EQUAL, TRANSFORM)
 			CASE_TYPE(math, OP_GREATER_EQUAL, COLOR)
@@ -818,7 +819,7 @@ void Variant::evaluate(const Operator &p_op, const Variant &p_a,
 			CASE_TYPE(math, OP_ADD, RECT2)
 			CASE_TYPE(math, OP_ADD, TRANSFORM2D)
 			CASE_TYPE(math, OP_ADD, PLANE)
-			CASE_TYPE(math, OP_ADD, RECT3)
+			CASE_TYPE(math, OP_ADD, AABB)
 			CASE_TYPE(math, OP_ADD, BASIS)
 			CASE_TYPE(math, OP_ADD, TRANSFORM)
 			CASE_TYPE(math, OP_ADD, NODE_PATH)
@@ -842,7 +843,7 @@ void Variant::evaluate(const Operator &p_op, const Variant &p_a,
 			CASE_TYPE(math, OP_SUBTRACT, RECT2)
 			CASE_TYPE(math, OP_SUBTRACT, TRANSFORM2D)
 			CASE_TYPE(math, OP_SUBTRACT, PLANE)
-			CASE_TYPE(math, OP_SUBTRACT, RECT3)
+			CASE_TYPE(math, OP_SUBTRACT, AABB)
 			CASE_TYPE(math, OP_SUBTRACT, BASIS)
 			CASE_TYPE(math, OP_SUBTRACT, TRANSFORM)
 			CASE_TYPE(math, OP_SUBTRACT, NODE_PATH)
@@ -923,7 +924,7 @@ void Variant::evaluate(const Operator &p_op, const Variant &p_a,
 			CASE_TYPE(math, OP_MULTIPLY, STRING)
 			CASE_TYPE(math, OP_MULTIPLY, RECT2)
 			CASE_TYPE(math, OP_MULTIPLY, PLANE)
-			CASE_TYPE(math, OP_MULTIPLY, RECT3)
+			CASE_TYPE(math, OP_MULTIPLY, AABB)
 			CASE_TYPE(math, OP_MULTIPLY, NODE_PATH)
 			CASE_TYPE(math, OP_MULTIPLY, _RID)
 			CASE_TYPE(math, OP_MULTIPLY, OBJECT)
@@ -964,7 +965,7 @@ void Variant::evaluate(const Operator &p_op, const Variant &p_a,
 			CASE_TYPE(math, OP_DIVIDE, RECT2)
 			CASE_TYPE(math, OP_DIVIDE, TRANSFORM2D)
 			CASE_TYPE(math, OP_DIVIDE, PLANE)
-			CASE_TYPE(math, OP_DIVIDE, RECT3)
+			CASE_TYPE(math, OP_DIVIDE, AABB)
 			CASE_TYPE(math, OP_DIVIDE, BASIS)
 			CASE_TYPE(math, OP_DIVIDE, TRANSFORM)
 			CASE_TYPE(math, OP_DIVIDE, NODE_PATH)
@@ -995,7 +996,7 @@ void Variant::evaluate(const Operator &p_op, const Variant &p_a,
 			CASE_TYPE(math, OP_POSITIVE, STRING)
 			CASE_TYPE(math, OP_POSITIVE, RECT2)
 			CASE_TYPE(math, OP_POSITIVE, TRANSFORM2D)
-			CASE_TYPE(math, OP_POSITIVE, RECT3)
+			CASE_TYPE(math, OP_POSITIVE, AABB)
 			CASE_TYPE(math, OP_POSITIVE, BASIS)
 			CASE_TYPE(math, OP_POSITIVE, TRANSFORM)
 			CASE_TYPE(math, OP_POSITIVE, COLOR)
@@ -1029,7 +1030,7 @@ void Variant::evaluate(const Operator &p_op, const Variant &p_a,
 			CASE_TYPE(math, OP_NEGATE, STRING)
 			CASE_TYPE(math, OP_NEGATE, RECT2)
 			CASE_TYPE(math, OP_NEGATE, TRANSFORM2D)
-			CASE_TYPE(math, OP_NEGATE, RECT3)
+			CASE_TYPE(math, OP_NEGATE, AABB)
 			CASE_TYPE(math, OP_NEGATE, BASIS)
 			CASE_TYPE(math, OP_NEGATE, TRANSFORM)
 			CASE_TYPE(math, OP_NEGATE, NODE_PATH)
@@ -1088,7 +1089,7 @@ void Variant::evaluate(const Operator &p_op, const Variant &p_a,
 			CASE_TYPE(math, OP_MODULE, TRANSFORM2D)
 			CASE_TYPE(math, OP_MODULE, PLANE)
 			CASE_TYPE(math, OP_MODULE, QUAT)
-			CASE_TYPE(math, OP_MODULE, RECT3)
+			CASE_TYPE(math, OP_MODULE, AABB)
 			CASE_TYPE(math, OP_MODULE, BASIS)
 			CASE_TYPE(math, OP_MODULE, TRANSFORM)
 			CASE_TYPE(math, OP_MODULE, COLOR)
@@ -1384,10 +1385,10 @@ void Variant::set_named(const StringName &p_index, const Variant &p_value, bool 
 			}
 
 		} break; // 10
-		case RECT3: {
+		case AABB: {
 
 			if (p_value.type == Variant::VECTOR3) {
-				Rect3 *v = _data._rect3;
+				::AABB *v = _data._aabb;
 				//scalar name
 				if (p_index == CoreStringNames::singleton->position) {
 					v->position = *reinterpret_cast<const Vector3 *>(p_value._data._mem);
@@ -1458,13 +1459,13 @@ void Variant::set_named(const StringName &p_index, const Variant &p_value, bool 
 					v->a = p_value._data._int / 255.0;
 					valid = true;
 				} else if (p_index == CoreStringNames::singleton->h) {
-					v->set_hsv(p_value._data._int, v->get_s(), v->get_v());
+					v->set_hsv(p_value._data._int, v->get_s(), v->get_v(), v->a);
 					valid = true;
 				} else if (p_index == CoreStringNames::singleton->s) {
-					v->set_hsv(v->get_h(), p_value._data._int, v->get_v());
+					v->set_hsv(v->get_h(), p_value._data._int, v->get_v(), v->a);
 					valid = true;
 				} else if (p_index == CoreStringNames::singleton->v) {
-					v->set_hsv(v->get_h(), v->get_v(), p_value._data._int);
+					v->set_hsv(v->get_h(), v->get_v(), p_value._data._int, v->a);
 					valid = true;
 				}
 			} else if (p_value.type == Variant::REAL) {
@@ -1494,13 +1495,13 @@ void Variant::set_named(const StringName &p_index, const Variant &p_value, bool 
 					v->a = p_value._data._real / 255.0;
 					valid = true;
 				} else if (p_index == CoreStringNames::singleton->h) {
-					v->set_hsv(p_value._data._real, v->get_s(), v->get_v());
+					v->set_hsv(p_value._data._real, v->get_s(), v->get_v(), v->a);
 					valid = true;
 				} else if (p_index == CoreStringNames::singleton->s) {
-					v->set_hsv(v->get_h(), p_value._data._real, v->get_v());
+					v->set_hsv(v->get_h(), p_value._data._real, v->get_v(), v->a);
 					valid = true;
 				} else if (p_index == CoreStringNames::singleton->v) {
-					v->set_hsv(v->get_h(), v->get_v(), p_value._data._real);
+					v->set_hsv(v->get_h(), v->get_s(), p_value._data._real, v->a);
 					valid = true;
 				}
 			}
@@ -1609,9 +1610,9 @@ Variant Variant::get_named(const StringName &p_index, bool *r_valid) const {
 			}
 
 		} break; // 10
-		case RECT3: {
+		case AABB: {
 
-			const Rect3 *v = _data._rect3;
+			const ::AABB *v = _data._aabb;
 			//scalar name
 			if (p_index == CoreStringNames::singleton->position) {
 				return v->position;
@@ -1655,13 +1656,13 @@ Variant Variant::get_named(const StringName &p_index, bool *r_valid) const {
 			} else if (p_index == CoreStringNames::singleton->a) {
 				return v->a;
 			} else if (p_index == CoreStringNames::singleton->r8) {
-				return int(v->r * 255.0);
+				return int(Math::round(v->r * 255.0));
 			} else if (p_index == CoreStringNames::singleton->g8) {
-				return int(v->g * 255.0);
+				return int(Math::round(v->g * 255.0));
 			} else if (p_index == CoreStringNames::singleton->b8) {
-				return int(v->b * 255.0);
+				return int(Math::round(v->b * 255.0));
 			} else if (p_index == CoreStringNames::singleton->a8) {
-				return int(v->a * 255.0);
+				return int(Math::round(v->a * 255.0));
 			} else if (p_index == CoreStringNames::singleton->h) {
 				return v->get_h();
 			} else if (p_index == CoreStringNames::singleton->s) {
@@ -1982,7 +1983,7 @@ void Variant::set(const Variant &p_index, const Variant &p_value, bool *r_valid)
 			}
 
 		} break; // 10
-		case RECT3: {
+		case AABB: {
 
 			if (p_value.type != Variant::VECTOR3)
 				return;
@@ -1991,7 +1992,7 @@ void Variant::set(const Variant &p_index, const Variant &p_value, bool *r_valid)
 				//scalar name
 
 				const String *str = reinterpret_cast<const String *>(p_index._data._mem);
-				Rect3 *v = _data._rect3;
+				::AABB *v = _data._aabb;
 				if (*str == "position") {
 					valid = true;
 					v->position = p_value;
@@ -2116,15 +2117,15 @@ void Variant::set(const Variant &p_index, const Variant &p_value, bool *r_valid)
 					return;
 				} else if (*str == "h") {
 					valid = true;
-					v->set_hsv(p_value, v->get_s(), v->get_v());
+					v->set_hsv(p_value, v->get_s(), v->get_v(), v->a);
 					return;
 				} else if (*str == "s") {
 					valid = true;
-					v->set_hsv(v->get_h(), p_value, v->get_v());
+					v->set_hsv(v->get_h(), p_value, v->get_v(), v->a);
 					return;
 				} else if (*str == "v") {
 					valid = true;
-					v->set_hsv(v->get_h(), v->get_s(), p_value);
+					v->set_hsv(v->get_h(), v->get_s(), p_value, v->a);
 					return;
 				} else if (*str == "r8") {
 					valid = true;
@@ -2148,7 +2149,7 @@ void Variant::set(const Variant &p_index, const Variant &p_value, bool *r_valid)
 				int idx = p_index;
 				if (idx < 0)
 					idx += 4;
-				if (idx >= 0 || idx < 4) {
+				if (idx >= 0 && idx < 4) {
 					Color *v = reinterpret_cast<Color *>(_data._mem);
 					(*v)[idx] = p_value;
 					valid = true;
@@ -2400,13 +2401,13 @@ Variant Variant::get(const Variant &p_index, bool *r_valid) const {
 			}
 
 		} break; // 10
-		case RECT3: {
+		case AABB: {
 
 			if (p_index.get_type() == Variant::STRING) {
 				//scalar name
 
 				const String *str = reinterpret_cast<const String *>(p_index._data._mem);
-				const Rect3 *v = _data._rect3;
+				const ::AABB *v = _data._aabb;
 				if (*str == "position") {
 					valid = true;
 					return v->position;
@@ -2523,7 +2524,7 @@ Variant Variant::get(const Variant &p_index, bool *r_valid) const {
 				int idx = p_index;
 				if (idx < 0)
 					idx += 4;
-				if (idx >= 0 || idx < 4) {
+				if (idx >= 0 && idx < 4) {
 					const Color *v = reinterpret_cast<const Color *>(_data._mem);
 					valid = true;
 					return (*v)[idx];
@@ -2835,7 +2836,7 @@ void Variant::get_property_list(List<PropertyInfo> *p_list) const {
 			p_list->push_back(PropertyInfo(Variant::REAL, "w"));
 
 		} break; // 10
-		case RECT3: {
+		case AABB: {
 			p_list->push_back(PropertyInfo(Variant::VECTOR3, "position"));
 			p_list->push_back(PropertyInfo(Variant::VECTOR3, "size"));
 			p_list->push_back(PropertyInfo(Variant::VECTOR3, "end"));
@@ -3414,6 +3415,28 @@ Variant Variant::iter_get(const Variant &r_iter, bool &r_valid) const {
 	return Variant();
 }
 
+Variant Variant::duplicate(bool deep) const {
+	switch (type) {
+		case OBJECT: {
+			/*  breaks stuff :(
+			if (deep && !_get_obj().ref.is_null()) {
+				Ref<Resource> resource = _get_obj().ref;
+				if (resource.is_valid()) {
+					return resource->duplicate(true);
+				}
+			}
+			*/
+			return *this;
+		} break;
+		case DICTIONARY:
+			return operator Dictionary().duplicate(deep);
+		case ARRAY:
+			return operator Array().duplicate(deep);
+		default:
+			return *this;
+	}
+}
+
 void Variant::blend(const Variant &a, const Variant &b, float c, Variant &r_dst) {
 	if (a.type != b.type) {
 		if (a.is_num() && b.is_num()) {
@@ -3457,10 +3480,10 @@ void Variant::blend(const Variant &a, const Variant &b, float c, Variant &r_dst)
 			r_dst = *reinterpret_cast<const Vector3 *>(a._data._mem) + *reinterpret_cast<const Vector3 *>(b._data._mem) * c;
 		}
 			return;
-		case RECT3: {
-			const Rect3 *ra = reinterpret_cast<const Rect3 *>(a._data._mem);
-			const Rect3 *rb = reinterpret_cast<const Rect3 *>(b._data._mem);
-			r_dst = Rect3(ra->position + rb->position * c, ra->size + rb->size * c);
+		case AABB: {
+			const ::AABB *ra = reinterpret_cast<const ::AABB *>(a._data._mem);
+			const ::AABB *rb = reinterpret_cast<const ::AABB *>(b._data._mem);
+			r_dst = ::AABB(ra->position + rb->position * c, ra->size + rb->size * c);
 		}
 			return;
 		case QUAT: {
@@ -3498,7 +3521,7 @@ void Variant::interpolate(const Variant &a, const Variant &b, float c, Variant &
 			//not as efficient but..
 			real_t va = a;
 			real_t vb = b;
-			r_dst = (1.0 - c) * va + vb * c;
+			r_dst = va + (vb - va) * c;
 
 		} else {
 			r_dst = a;
@@ -3519,13 +3542,13 @@ void Variant::interpolate(const Variant &a, const Variant &b, float c, Variant &
 		case INT: {
 			int64_t va = a._data._int;
 			int64_t vb = b._data._int;
-			r_dst = int((1.0 - c) * va + vb * c);
+			r_dst = int(va + (vb - va) * c);
 		}
 			return;
 		case REAL: {
 			real_t va = a._data._real;
 			real_t vb = b._data._real;
-			r_dst = (1.0 - c) * va + vb * c;
+			r_dst = va + (vb - va) * c;
 		}
 			return;
 		case STRING: {
@@ -3533,7 +3556,9 @@ void Variant::interpolate(const Variant &a, const Variant &b, float c, Variant &
 			String sa = *reinterpret_cast<const String *>(a._data._mem);
 			String sb = *reinterpret_cast<const String *>(b._data._mem);
 			String dst;
-			int csize = sb.length() * c + sa.length() * (1.0 - c);
+			int sa_len = sa.length();
+			int sb_len = sb.length();
+			int csize = sa_len + (sb_len - sa_len) * c;
 			if (csize == 0) {
 				r_dst = "";
 				return;
@@ -3591,8 +3616,8 @@ void Variant::interpolate(const Variant &a, const Variant &b, float c, Variant &
 			r_dst = reinterpret_cast<const Quat *>(a._data._mem)->slerp(*reinterpret_cast<const Quat *>(b._data._mem), c);
 		}
 			return;
-		case RECT3: {
-			r_dst = Rect3(a._data._rect3->position.linear_interpolate(b._data._rect3->position, c), a._data._rect3->size.linear_interpolate(b._data._rect3->size, c));
+		case AABB: {
+			r_dst = ::AABB(a._data._aabb->position.linear_interpolate(b._data._aabb->position, c), a._data._aabb->size.linear_interpolate(b._data._aabb->size, c));
 		}
 			return;
 		case BASIS: {
@@ -3714,8 +3739,9 @@ static const char *_op_names[Variant::OP_MAX] = {
 	"*",
 	"/",
 	"- (negation)",
+	"+ (positive)",
 	"%",
-	"..",
+	"+ (concatenation)",
 	"<<",
 	">>",
 	"&",

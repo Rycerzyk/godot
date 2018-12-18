@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2017 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2017 Godot Engine contributors (cf. AUTHORS.md)    */
+/* Copyright (c) 2007-2018 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2018 Godot Engine contributors (cf. AUTHORS.md)    */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -27,16 +27,17 @@
 /* TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE     */
 /* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                */
 /*************************************************************************/
+
 #include "variant.h"
 
-#include "core_string_names.h"
-#include "io/marshalls.h"
-#include "math_funcs.h"
-#include "print_string.h"
-#include "resource.h"
+#include "core/core_string_names.h"
+#include "core/io/marshalls.h"
+#include "core/math/math_funcs.h"
+#include "core/print_string.h"
+#include "core/resource.h"
+#include "core/variant_parser.h"
 #include "scene/gui/control.h"
 #include "scene/main/node.h"
-#include "variant_parser.h"
 
 String Variant::get_type_name(Variant::Type p_type) {
 
@@ -67,7 +68,6 @@ String Variant::get_type_name(Variant::Type p_type) {
 		} break;
 
 		// math types
-
 		case VECTOR2: {
 
 			return "Vector2";
@@ -94,9 +94,9 @@ String Variant::get_type_name(Variant::Type p_type) {
 
 
 			} break;*/
-		case RECT3: {
+		case AABB: {
 
-			return "Rect3";
+			return "AABB";
 		} break;
 		case QUAT: {
 
@@ -267,6 +267,7 @@ bool Variant::can_convert(Variant::Type p_type_from, Variant::Type p_type_to) {
 
 			static const Type valid[] = {
 				QUAT,
+				VECTOR3,
 				NIL
 			};
 
@@ -512,6 +513,7 @@ bool Variant::can_convert_strict(Variant::Type p_type_from, Variant::Type p_type
 
 			static const Type valid[] = {
 				QUAT,
+				VECTOR3,
 				NIL
 			};
 
@@ -723,7 +725,6 @@ bool Variant::is_zero() const {
 		} break;
 
 		// math types
-
 		case VECTOR2: {
 
 			return *reinterpret_cast<const Vector2 *>(_data._mem) == Vector2();
@@ -754,9 +755,9 @@ bool Variant::is_zero() const {
 
 
 		} break;*/
-		case RECT3: {
+		case AABB: {
 
-			return *_data._rect3 == Rect3();
+			return *_data._aabb == ::AABB();
 		} break;
 		case QUAT: {
 
@@ -857,7 +858,7 @@ bool Variant::is_one() const {
 		// atomic types
 		case BOOL: {
 
-			return _data._bool == true;
+			return _data._bool;
 		} break;
 		case INT: {
 
@@ -932,7 +933,6 @@ void Variant::reference(const Variant &p_variant) {
 		} break;
 
 		// math types
-
 		case VECTOR2: {
 
 			memnew_placement(_data._mem, Vector2(*reinterpret_cast<const Vector2 *>(p_variant._data._mem)));
@@ -954,9 +954,9 @@ void Variant::reference(const Variant &p_variant) {
 			memnew_placement(_data._mem, Plane(*reinterpret_cast<const Plane *>(p_variant._data._mem)));
 		} break;
 
-		case RECT3: {
+		case AABB: {
 
-			_data._rect3 = memnew(Rect3(*p_variant._data._rect3));
+			_data._aabb = memnew(::AABB(*p_variant._data._aabb));
 		} break;
 		case QUAT: {
 
@@ -1079,9 +1079,9 @@ void Variant::clear() {
 
 			memdelete(_data._transform2d);
 		} break;
-		case RECT3: {
+		case AABB: {
 
-			memdelete(_data._rect3);
+			memdelete(_data._aabb);
 		} break;
 		case BASIS: {
 
@@ -1192,7 +1192,7 @@ Variant::operator int64_t() const {
 		case BOOL: return _data._bool ? 1 : 0;
 		case INT: return _data._int;
 		case REAL: return _data._real;
-		case STRING: return operator String().to_int();
+		case STRING: return operator String().to_int64();
 		default: {
 
 			return 0;
@@ -1426,7 +1426,7 @@ Variant::operator String() const {
 		case PLANE:
 			return operator Plane();
 		//case QUAT:
-		case RECT3: return operator Rect3();
+		case AABB: return operator ::AABB();
 		case QUAT: return "(" + operator Quat() + ")";
 		case BASIS: {
 
@@ -1460,7 +1460,7 @@ Variant::operator String() const {
 
 			const Dictionary &d = *reinterpret_cast<const Dictionary *>(_data._mem);
 			//const String *K=NULL;
-			String str;
+			String str("{");
 			List<Variant> keys;
 			d.get_key_list(&keys);
 
@@ -1479,8 +1479,9 @@ Variant::operator String() const {
 			for (int i = 0; i < pairs.size(); i++) {
 				if (i > 0)
 					str += ", ";
-				str += "(" + pairs[i].key + ":" + pairs[i].value + ")";
+				str += pairs[i].key + ":" + pairs[i].value;
 			}
+			str += "}";
 
 			return str;
 		} break;
@@ -1607,6 +1608,8 @@ Variant::operator Vector3() const {
 
 	if (type == VECTOR3)
 		return *reinterpret_cast<const Vector3 *>(_data._mem);
+	else if (type == VECTOR2)
+		return Vector3(reinterpret_cast<const Vector2 *>(_data._mem)->x, reinterpret_cast<const Vector2 *>(_data._mem)->y, 0.0);
 	else
 		return Vector3();
 }
@@ -1617,12 +1620,12 @@ Variant::operator Plane() const {
 	else
 		return Plane();
 }
-Variant::operator Rect3() const {
+Variant::operator ::AABB() const {
 
-	if (type == RECT3)
-		return *_data._rect3;
+	if (type == AABB)
+		return *_data._aabb;
 	else
-		return Rect3();
+		return ::AABB();
 }
 
 Variant::operator Basis() const {
@@ -1631,7 +1634,9 @@ Variant::operator Basis() const {
 		return *_data._basis;
 	else if (type == QUAT)
 		return *reinterpret_cast<const Quat *>(_data._mem);
-	else if (type == TRANSFORM)
+	else if (type == VECTOR3) {
+		return Basis(*reinterpret_cast<const Vector3 *>(_data._mem));
+	} else if (type == TRANSFORM) // unexposed in Variant::can_convert?
 		return _data._transform->basis;
 	else
 		return Basis();
@@ -1657,7 +1662,17 @@ Variant::operator Transform() const {
 		return Transform(*_data._basis, Vector3());
 	else if (type == QUAT)
 		return Transform(Basis(*reinterpret_cast<const Quat *>(_data._mem)), Vector3());
-	else
+	else if (type == TRANSFORM2D) {
+		const Transform2D &t = *_data._transform2d;
+		Transform m;
+		m.basis.elements[0][0] = t.elements[0][0];
+		m.basis.elements[1][0] = t.elements[0][1];
+		m.basis.elements[0][1] = t.elements[1][0];
+		m.basis.elements[1][1] = t.elements[1][1];
+		m.origin[0] = t.elements[2][0];
+		m.origin[1] = t.elements[2][1];
+		return m;
+	} else
 		return Transform();
 }
 
@@ -1874,7 +1889,7 @@ Variant::operator Vector<RID>() const {
 	Vector<RID> rids;
 	rids.resize(va.size());
 	for (int i = 0; i < rids.size(); i++)
-		rids[i] = va[i];
+		rids.write[i] = va[i];
 	return rids;
 }
 
@@ -1887,7 +1902,7 @@ Variant::operator Vector<Vector2>() const {
 		return Vector<Vector2>();
 	to.resize(len);
 	PoolVector<Vector2>::Read r = from.read();
-	Vector2 *w = &to[0];
+	Vector2 *w = to.ptrw();
 	for (int i = 0; i < len; i++) {
 
 		w[i] = r[i];
@@ -1941,7 +1956,7 @@ Variant::operator Vector<Plane>() const {
 	planes.resize(va_size);
 
 	for (int i = 0; i < va_size; i++)
-		planes[i] = va[i];
+		planes.write[i] = va[i];
 
 	return planes;
 }
@@ -1954,7 +1969,7 @@ Variant::operator Vector<Variant>() const {
 	to.resize(len);
 	for (int i = 0; i < len; i++) {
 
-		to[i] = from[i];
+		to.write[i] = from[i];
 	}
 	return to;
 }
@@ -1967,7 +1982,7 @@ Variant::operator Vector<uint8_t>() const {
 	to.resize(len);
 	for (int i = 0; i < len; i++) {
 
-		to[i] = from[i];
+		to.write[i] = from[i];
 	}
 	return to;
 }
@@ -1979,7 +1994,7 @@ Variant::operator Vector<int>() const {
 	to.resize(len);
 	for (int i = 0; i < len; i++) {
 
-		to[i] = from[i];
+		to.write[i] = from[i];
 	}
 	return to;
 }
@@ -1991,7 +2006,7 @@ Variant::operator Vector<real_t>() const {
 	to.resize(len);
 	for (int i = 0; i < len; i++) {
 
-		to[i] = from[i];
+		to.write[i] = from[i];
 	}
 	return to;
 }
@@ -2004,10 +2019,23 @@ Variant::operator Vector<String>() const {
 	to.resize(len);
 	for (int i = 0; i < len; i++) {
 
-		to[i] = from[i];
+		to.write[i] = from[i];
 	}
 	return to;
 }
+Variant::operator Vector<StringName>() const {
+
+	PoolVector<String> from = operator PoolVector<String>();
+	Vector<StringName> to;
+	int len = from.size();
+	to.resize(len);
+	for (int i = 0; i < len; i++) {
+
+		to.write[i] = from[i];
+	}
+	return to;
+}
+
 Variant::operator Vector<Vector3>() const {
 
 	PoolVector<Vector3> from = operator PoolVector<Vector3>();
@@ -2017,7 +2045,7 @@ Variant::operator Vector<Vector3>() const {
 		return Vector<Vector3>();
 	to.resize(len);
 	PoolVector<Vector3>::Read r = from.read();
-	Vector3 *w = &to[0];
+	Vector3 *w = to.ptrw();
 	for (int i = 0; i < len; i++) {
 
 		w[i] = r[i];
@@ -2033,7 +2061,7 @@ Variant::operator Vector<Color>() const {
 		return Vector<Color>();
 	to.resize(len);
 	PoolVector<Color>::Read r = from.read();
-	Color *w = &to[0];
+	Color *w = to.ptrw();
 	for (int i = 0; i < len; i++) {
 
 		w[i] = r[i];
@@ -2188,10 +2216,10 @@ Variant::Variant(const Plane &p_plane) {
 	type = PLANE;
 	memnew_placement(_data._mem, Plane(p_plane));
 }
-Variant::Variant(const Rect3 &p_aabb) {
+Variant::Variant(const ::AABB &p_aabb) {
 
-	type = RECT3;
-	_data._rect3 = memnew(Rect3(p_aabb));
+	type = AABB;
+	_data._aabb = memnew(::AABB(p_aabb));
 }
 
 Variant::Variant(const Basis &p_matrix) {
@@ -2440,6 +2468,17 @@ Variant::Variant(const Vector<String> &p_array) {
 	*this = v;
 }
 
+Variant::Variant(const Vector<StringName> &p_array) {
+
+	type = NIL;
+	PoolVector<String> v;
+	int len = p_array.size();
+	v.resize(len);
+	for (int i = 0; i < len; i++)
+		v.set(i, p_array[i]);
+	*this = v;
+}
+
 Variant::Variant(const Vector<Vector3> &p_array) {
 
 	type = NIL;
@@ -2502,7 +2541,6 @@ void Variant::operator=(const Variant &p_variant) {
 		} break;
 
 		// math types
-
 		case VECTOR2: {
 
 			*reinterpret_cast<Vector2 *>(_data._mem) = *reinterpret_cast<const Vector2 *>(p_variant._data._mem);
@@ -2524,9 +2562,9 @@ void Variant::operator=(const Variant &p_variant) {
 			*reinterpret_cast<Plane *>(_data._mem) = *reinterpret_cast<const Plane *>(p_variant._data._mem);
 		} break;
 
-		case RECT3: {
+		case AABB: {
 
-			*_data._rect3 = *(p_variant._data._rect3);
+			*_data._aabb = *(p_variant._data._aabb);
 		} break;
 		case QUAT: {
 
@@ -2641,8 +2679,8 @@ uint32_t Variant::hash() const {
 
 			return reinterpret_cast<const String *>(_data._mem)->hash();
 		} break;
-		// math types
 
+		// math types
 		case VECTOR2: {
 
 			uint32_t hash = hash_djb2_one_float(reinterpret_cast<const Vector2 *>(_data._mem)->x);
@@ -2686,13 +2724,13 @@ uint32_t Variant::hash() const {
 
 
 			} break;*/
-		case RECT3: {
+		case AABB: {
 
 			uint32_t hash = 5831;
 			for (int i = 0; i < 3; i++) {
 
-				hash = hash_djb2_one_float(_data._rect3->position[i], hash);
-				hash = hash_djb2_one_float(_data._rect3->size[i], hash);
+				hash = hash_djb2_one_float(_data._aabb->position[i], hash);
+				hash = hash_djb2_one_float(_data._aabb->size[i], hash);
 			}
 
 			return hash;
@@ -2952,9 +2990,9 @@ bool Variant::hash_compare(const Variant &p_variant) const {
 				   (hash_compare_scalar(l->d, r->d));
 		} break;
 
-		case RECT3: {
-			const Rect3 *l = _data._rect3;
-			const Rect3 *r = p_variant._data._rect3;
+		case AABB: {
+			const ::AABB *l = _data._aabb;
+			const ::AABB *r = p_variant._data._aabb;
 
 			return (hash_compare_vector3(l->position, r->position) &&
 					(hash_compare_vector3(l->size, r->size)));
@@ -3164,7 +3202,11 @@ String Variant::get_call_error_text(Object *p_base, const StringName &p_method, 
 
 	if (ce.error == Variant::CallError::CALL_ERROR_INVALID_ARGUMENT) {
 		int errorarg = ce.argument;
-		err_text = "Cannot convert argument " + itos(errorarg + 1) + " from " + Variant::get_type_name(p_argptrs[errorarg]->get_type()) + " to " + Variant::get_type_name(ce.expected) + ".";
+		if (p_argptrs) {
+			err_text = "Cannot convert argument " + itos(errorarg + 1) + " from " + Variant::get_type_name(p_argptrs[errorarg]->get_type()) + " to " + Variant::get_type_name(ce.expected) + ".";
+		} else {
+			err_text = "Cannot convert argument " + itos(errorarg + 1) + " from [missing argptr, type unknown] to " + Variant::get_type_name(ce.expected) + ".";
+		}
 	} else if (ce.error == Variant::CallError::CALL_ERROR_TOO_MANY_ARGUMENTS) {
 		err_text = "Method expected " + itos(ce.argument) + " arguments, but called with " + itos(p_argcount) + ".";
 	} else if (ce.error == Variant::CallError::CALL_ERROR_TOO_FEW_ARGUMENTS) {

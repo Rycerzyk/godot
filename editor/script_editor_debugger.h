@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2017 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2017 Godot Engine contributors (cf. AUTHORS.md)    */
+/* Copyright (c) 2007-2018 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2018 Godot Engine contributors (cf. AUTHORS.md)    */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -27,17 +27,18 @@
 /* TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE     */
 /* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                */
 /*************************************************************************/
+
 #ifndef SCRIPT_EDITOR_DEBUGGER_H
 #define SCRIPT_EDITOR_DEBUGGER_H
 
 #include "core/io/packet_peer.h"
 #include "core/io/tcp_server.h"
-#include "property_editor.h"
+#include "editor/editor_inspector.h"
+#include "editor/property_editor.h"
 #include "scene/gui/box_container.h"
 #include "scene/gui/button.h"
 
 class Tree;
-class PropertyEditor;
 class EditorNode;
 class ScriptEditorDebuggerVariables;
 class LineEdit;
@@ -62,6 +63,11 @@ class ScriptEditorDebugger : public Control {
 		MESSAGE_SUCCESS,
 	};
 
+	enum ItemMenu {
+		ITEM_MENU_COPY_ERROR,
+		ITEM_MENU_SAVE_REMOTE_NODE,
+	};
+
 	AcceptDialog *msgdialog;
 
 	Button *debugger_button;
@@ -72,22 +78,26 @@ class ScriptEditorDebugger : public Control {
 	Button *le_set;
 	Button *le_clear;
 
-	Tree *inspect_scene_tree;
-	HSplitContainer *inspect_info;
-	PropertyEditor *inspect_properties;
+	bool updating_scene_tree;
 	float inspect_scene_tree_timeout;
 	float inspect_edited_object_timeout;
+	bool auto_switch_remote_scene_tree;
 	ObjectID inspected_object_id;
-	ScriptEditorDebuggerInspectedObject *inspected_object;
-	bool updating_scene_tree;
+	ScriptEditorDebuggerVariables *variables;
+	Map<ObjectID, ScriptEditorDebuggerInspectedObject *> remote_objects;
 	Set<ObjectID> unfold_cache;
 
 	HSplitContainer *error_split;
-	ItemList *error_list;
-	ItemList *error_stack;
+	Tree *error_tree;
+	Tree *inspect_scene_tree;
+	Button *clearbutton;
+	PopupMenu *item_menu;
+	EditorFileDialog *file_dialog;
 
 	int error_count;
+	int warning_count;
 	int last_error_count;
+	int last_warning_count;
 
 	bool hide_on_stop;
 	bool enable_external_editor;
@@ -96,8 +106,8 @@ class ScriptEditorDebugger : public Control {
 	TabContainer *tabs;
 
 	Label *reason;
-	ScriptEditorDebuggerVariables *variables;
 
+	Button *copy;
 	Button *step;
 	Button *next;
 	Button *back;
@@ -119,7 +129,7 @@ class ScriptEditorDebugger : public Control {
 	LineEdit *vmem_total;
 
 	Tree *stack_dump;
-	PropertyEditor *inspector;
+	EditorInspector *inspector;
 
 	Ref<TCP_Server> server;
 	Ref<StreamPeerTCP> connection;
@@ -148,6 +158,8 @@ class ScriptEditorDebugger : public Control {
 
 	void _scene_tree_folded(Object *obj);
 	void _scene_tree_selected();
+	void _scene_tree_rmb_selected(const Vector2 &p_position);
+	void _file_selected(const String &p_file);
 	void _scene_tree_request();
 	void _parse_message(const String &p_msg, const Array &p_data);
 	void _set_reason_text(const String &p_reason, MessageType p_type);
@@ -166,13 +178,23 @@ class ScriptEditorDebugger : public Control {
 	void _method_changed(Object *p_base, const StringName &p_name, VARIANT_ARG_DECLARE);
 	void _property_changed(Object *p_base, const StringName &p_property, const Variant &p_value);
 
-	void _error_selected(int p_idx);
-	void _error_stack_selected(int p_idx);
+	void _error_activated();
+	void _error_selected();
+
+	void _expand_errors_list();
+	void _collapse_errors_list();
 
 	void _profiler_activate(bool p_enable);
 	void _profiler_seeked();
 
 	void _paused();
+
+	void _set_remote_object(ObjectID p_id, ScriptEditorDebuggerInspectedObject *p_obj);
+	void _clear_remote_objects();
+	void _clear_errors_list();
+
+	void _error_tree_item_rmb_selected(const Vector2 &p_pos);
+	void _item_menu_id_pressed(int p_option);
 
 protected:
 	void _notification(int p_what);
@@ -183,6 +205,8 @@ public:
 	void pause();
 	void unpause();
 	void stop();
+
+	void debug_copy();
 
 	void debug_next();
 	void debug_step();

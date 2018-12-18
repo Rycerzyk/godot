@@ -5,10 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2017 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2017 Godot Engine contributors (cf. AUTHORS.md)    */
-/*                                                                       */
-/* Author: Mariano Suligoy                                               */
+/* Copyright (c) 2007-2018 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2018 Godot Engine contributors (cf. AUTHORS.md)    */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -41,9 +39,13 @@
 #include "scene/resources/style_box.h"
 #include "scene/resources/texture.h"
 
-class TextureRegionEditor : public Control {
+/**
+	@author Mariano Suligoy
+*/
 
-	GDCLASS(TextureRegionEditor, Control);
+class TextureRegionEditor : public VBoxContainer {
+
+	GDCLASS(TextureRegionEditor, VBoxContainer);
 
 	enum SnapMode {
 		SNAP_NONE,
@@ -53,8 +55,7 @@ class TextureRegionEditor : public Control {
 	};
 
 	friend class TextureRegionEditorPlugin;
-	MenuButton *snap_mode_button;
-	TextureRect *icon_zoom;
+	OptionButton *snap_mode_button;
 	ToolButton *zoom_in;
 	ToolButton *zoom_reset;
 	ToolButton *zoom_out;
@@ -65,7 +66,7 @@ class TextureRegionEditor : public Control {
 	SpinBox *sb_off_x;
 	SpinBox *sb_sep_y;
 	SpinBox *sb_sep_x;
-	Control *edit_draw;
+	Panel *edit_draw;
 
 	VScrollBar *vscroll;
 	HScrollBar *hscroll;
@@ -91,7 +92,9 @@ class TextureRegionEditor : public Control {
 	Rect2 rect_prev;
 	float prev_margin;
 	int edited_margin;
+	Map<RID, List<Rect2> > cache_map;
 	List<Rect2> autoslice_cache;
+	bool autoslice_is_dirty;
 
 	bool drag;
 	bool creating;
@@ -108,7 +111,9 @@ class TextureRegionEditor : public Control {
 	void _zoom_in();
 	void _zoom_reset();
 	void _zoom_out();
-	void apply_rect(const Rect2 &rect);
+	void apply_rect(const Rect2 &p_rect);
+	void _update_rect();
+	void _update_autoslice();
 
 protected:
 	void _notification(int p_what);
@@ -124,6 +129,10 @@ public:
 	void _region_draw();
 	void _region_input(const Ref<InputEvent> &p_input);
 	void _scroll_changed(float);
+	bool is_stylebox();
+	bool is_atlas_texture();
+	bool is_ninepatch();
+	Sprite *get_sprite();
 
 	void edit(Object *p_obj);
 	TextureRegionEditor(EditorNode *p_editor);
@@ -132,7 +141,7 @@ public:
 class TextureRegionEditorPlugin : public EditorPlugin {
 	GDCLASS(TextureRegionEditorPlugin, EditorPlugin);
 
-	Button *region_button;
+	Button *texture_region_button;
 	TextureRegionEditor *region_editor;
 	EditorNode *editor;
 

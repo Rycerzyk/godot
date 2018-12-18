@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2017 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2017 Godot Engine contributors (cf. AUTHORS.md)    */
+/* Copyright (c) 2007-2018 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2018 Godot Engine contributors (cf. AUTHORS.md)    */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -27,19 +27,20 @@
 /* TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE     */
 /* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                */
 /*************************************************************************/
+
 #include "export.h"
 
+#include "core/io/marshalls.h"
+#include "core/io/zip_io.h"
+#include "core/os/file_access.h"
+#include "core/os/os.h"
+#include "core/project_settings.h"
+#include "core/version.h"
 #include "editor/editor_export.h"
 #include "editor/editor_node.h"
 #include "editor/editor_settings.h"
-#include "io/marshalls.h"
-#include "io/zip_io.h"
-#include "os/file_access.h"
-#include "os/os.h"
 #include "platform/android/logo.gen.h"
 #include "platform/android/run_icon.gen.h"
-#include "project_settings.h"
-#include "version.h"
 
 #include <string.h>
 
@@ -192,6 +193,19 @@ static const char *android_perms[] = {
 	NULL
 };
 
+struct LauncherIcon {
+	const char *option_id;
+	const char *export_path;
+};
+
+static const LauncherIcon launcher_icons[] = {
+	{ "launcher_icons/xxxhdpi_192x192", "res/drawable-xxxhdpi-v4/icon.png" },
+	{ "launcher_icons/xxhdpi_144x144", "res/drawable-xxhdpi-v4/icon.png" },
+	{ "launcher_icons/xhdpi_96x96", "res/drawable-xhdpi-v4/icon.png" },
+	{ "launcher_icons/hdpi_72x72", "res/drawable-hdpi-v4/icon.png" },
+	{ "launcher_icons/mdpi_48x48", "res/drawable-mdpi-v4/icon.png" }
+};
+
 class EditorExportAndroid : public EditorExportPlatform {
 
 	GDCLASS(EditorExportAndroid, EditorExportPlatform)
@@ -214,7 +228,7 @@ class EditorExportAndroid : public EditorExportPlatform {
 	};
 
 	Vector<Device> devices;
-	bool devices_changed;
+	volatile bool devices_changed;
 	Mutex *device_lock;
 	Thread *device_thread;
 	volatile bool quit_request;
@@ -243,7 +257,6 @@ class EditorExportAndroid : public EditorExportPlatform {
 					if (dpos == -1)
 						continue;
 					d = d.substr(0, dpos).strip_edges();
-					//print_line("found devuce: "+d);
 					ldevices.push_back(d);
 				}
 
@@ -287,8 +300,7 @@ class EditorExportAndroid : public EditorExportPlatform {
 							args.push_back("-s");
 							args.push_back(d.id);
 							args.push_back("shell");
-							args.push_back("cat");
-							args.push_back("/system/build.prop");
+							args.push_back("getprop");
 							int ec;
 							String dp;
 
@@ -301,7 +313,14 @@ class EditorExportAndroid : public EditorExportPlatform {
 							d.api_level = 0;
 							for (int j = 0; j < props.size(); j++) {
 
+								// got information by `shell cat /system/build.prop` before and its format is "property=value"
+								// it's now changed to use `shell getporp` because of permission issue with Android 8.0 and above
+								// its format is "[property]: [value]" so changed it as like build.prop
 								String p = props[j];
+								p = p.replace("]: ", "=");
+								p = p.replace("[", "");
+								p = p.replace("]", "");
+
 								if (p.begins_with("ro.product.model=")) {
 									device = p.get_slice("=", 1).strip_edges();
 								} else if (p.begins_with("ro.product.brand=")) {
@@ -325,8 +344,7 @@ class EditorExportAndroid : public EditorExportPlatform {
 							}
 
 							d.name = vendor + " " + device;
-							//print_line("name: "+d.name);
-							//print_line("description: "+d.description);
+							if (device == String()) continue;
 						}
 
 						ndevices.push_back(d);
@@ -339,10 +357,11 @@ class EditorExportAndroid : public EditorExportPlatform {
 				ea->device_lock->unlock();
 			}
 
+			uint64_t sleep = OS::get_singleton()->get_power_state() == OS::POWERSTATE_ON_BATTERY ? 1000 : 100;
 			uint64_t wait = 3000000;
 			uint64_t time = OS::get_singleton()->get_ticks_usec();
 			while (OS::get_singleton()->get_ticks_usec() - time < wait) {
-				OS::get_singleton()->delay_usec(1000);
+				OS::get_singleton()->delay_usec(1000 * sleep);
 				if (ea->quit_request)
 					break;
 			}
@@ -370,13 +389,13 @@ class EditorExportAndroid : public EditorExportPlatform {
 		}
 
 		if (aname == "") {
-			aname = _MKSTR(VERSION_NAME);
+			aname = VERSION_NAME;
 		}
 
 		return aname;
 	}
 
-	String get_package_name(const String &p_package) {
+	String get_package_name(const String &p_package) const {
 
 		String pname = p_package;
 		String basename = ProjectSettings::get_singleton()->get("application/config/name");
@@ -399,6 +418,70 @@ class EditorExportAndroid : public EditorExportPlatform {
 
 		pname = pname.replace("$genname", name);
 		return pname;
+	}
+
+	bool is_package_name_valid(const String &p_package, String *r_error = NULL) const {
+
+		String pname = p_package;
+
+		if (pname.length() == 0) {
+			if (r_error) {
+				*r_error = "Package name is missing.";
+			}
+			return false;
+		}
+
+		int segments = 0;
+		bool first = true;
+		for (int i = 0; i < pname.length(); i++) {
+			CharType c = pname[i];
+			if (first && c == '.') {
+				if (r_error) {
+					*r_error = "Package segments must be of non-zero length.";
+				}
+				return false;
+			}
+			if (c == '.') {
+				segments++;
+				first = true;
+				continue;
+			}
+			if (!((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_')) {
+				if (r_error) {
+					*r_error = "The character '" + String::chr(c) + "' is not allowed in Android application package names.";
+				}
+				return false;
+			}
+			if (first && (c >= '0' && c <= '9')) {
+				if (r_error) {
+					*r_error = "A digit cannot be the first character in a package segment.";
+				}
+				return false;
+			}
+			if (first && c == '_') {
+				if (r_error) {
+					*r_error = "The character '" + String::chr(c) + "' cannot be the first character in a package segment.";
+				}
+				return false;
+			}
+			first = false;
+		}
+
+		if (segments == 0) {
+			if (r_error) {
+				*r_error = "The package must have at least one '.' separator.";
+			}
+			return false;
+		}
+
+		if (first) {
+			if (r_error) {
+				*r_error = "Package segments must be of non-zero length.";
+			}
+			return false;
+		}
+
+		return true;
 	}
 
 	static bool _should_compress_asset(const String &p_path, const Vector<uint8_t> &p_data) {
@@ -467,53 +550,78 @@ class EditorExportAndroid : public EditorExportPlatform {
 		return zipfi;
 	}
 
-	static Set<String> get_abis() {
-		Set<String> abis;
-		abis.insert("armeabi");
-		abis.insert("armeabi-v7a");
-		abis.insert("arm64-v8a");
-		abis.insert("x86");
-		abis.insert("x86_64");
-		abis.insert("mips");
-		abis.insert("mips64");
+	static Vector<String> get_abis() {
+		Vector<String> abis;
+		// We can still build armv7 in theory, but it doesn't make much
+		// sense for games, so disabling for now.
+		//abis.push_back("armeabi");
+		abis.push_back("armeabi-v7a");
+		abis.push_back("arm64-v8a");
+		abis.push_back("x86");
+		// Don't expose x86_64 for now, we don't support it in detect.py
+		//abis.push_back("x86_64");
 		return abis;
 	}
 
-	static Error save_apk_file(void *p_userdata, const String &p_path, const Vector<uint8_t> &p_data, int p_file, int p_total) {
-		APKExportData *ed = (APKExportData *)p_userdata;
-		String dst_path = p_path;
-		static Set<String> android_abis = get_abis();
-
-		if (dst_path.ends_with(".so")) {
-			String abi = dst_path.get_base_dir().get_file().strip_edges(); // parent dir name
-			if (android_abis.has(abi)) {
-				dst_path = "lib/" + abi + "/" + dst_path.get_file();
-			} else {
-				String err = "Dynamic libraries must be located in the folder named after Android ABI they were compiled for. " +
-							 p_path + " does not follow this convention.";
-				ERR_PRINT(err.utf8().get_data());
-				return ERR_FILE_BAD_PATH;
-			}
-		} else {
-			dst_path = dst_path.replace_first("res://", "assets/");
-		}
-
+	static Error store_in_apk(APKExportData *ed, const String &p_path, const Vector<uint8_t> &p_data, int compression_method = Z_DEFLATED) {
 		zip_fileinfo zipfi = get_zip_fileinfo();
-
 		zipOpenNewFileInZip(ed->apk,
-				dst_path.utf8().get_data(),
+				p_path.utf8().get_data(),
 				&zipfi,
 				NULL,
 				0,
 				NULL,
 				0,
 				NULL,
-				_should_compress_asset(p_path, p_data) ? Z_DEFLATED : 0,
+				compression_method,
 				Z_DEFAULT_COMPRESSION);
 
 		zipWriteInFileInZip(ed->apk, p_data.ptr(), p_data.size());
 		zipCloseFileInZip(ed->apk);
+
+		return OK;
+	}
+
+	static Error save_apk_so(void *p_userdata, const SharedObject &p_so) {
+		if (!p_so.path.get_file().begins_with("lib")) {
+			String err = "Android .so file names must start with \"lib\", but got: " + p_so.path;
+			ERR_PRINT(err.utf8().get_data());
+			return FAILED;
+		}
+		APKExportData *ed = (APKExportData *)p_userdata;
+		Vector<String> abis = get_abis();
+		bool exported = false;
+		for (int i = 0; i < p_so.tags.size(); ++i) {
+			// shared objects can be fat (compatible with multiple ABIs)
+			int abi_index = abis.find(p_so.tags[i]);
+			if (abi_index != -1) {
+				exported = true;
+				String abi = abis[abi_index];
+				String dst_path = "lib/" + abi + "/" + p_so.path.get_file();
+				Vector<uint8_t> array = FileAccess::get_file_as_array(p_so.path);
+				Error store_err = store_in_apk(ed, dst_path, array);
+				ERR_FAIL_COND_V(store_err, store_err);
+			}
+		}
+		if (!exported) {
+			String abis_string = String(" ").join(abis);
+			String err = "Cannot determine ABI for library \"" + p_so.path + "\". One of the supported ABIs must be used as a tag: " + abis_string;
+			ERR_PRINT(err.utf8().get_data());
+			return FAILED;
+		}
+		return OK;
+	}
+
+	static Error save_apk_file(void *p_userdata, const String &p_path, const Vector<uint8_t> &p_data, int p_file, int p_total) {
+		APKExportData *ed = (APKExportData *)p_userdata;
+		String dst_path = p_path.replace_first("res://", "assets/");
+
+		store_in_apk(ed, dst_path, p_data, _should_compress_asset(p_path, p_data) ? Z_DEFLATED : 0);
 		ed->ep->step("File: " + p_path, 3 + p_file * 100 / p_total);
+		return OK;
+	}
+
+	static Error ignore_apk_file(void *p_userdata, const String &p_path, const Vector<uint8_t> &p_data, int p_file, int p_total) {
 		return OK;
 	}
 
@@ -525,7 +633,7 @@ class EditorExportAndroid : public EditorExportPlatform {
 		// const int CHUNK_RESOURCEIDS = 0x00080180;
 		const int CHUNK_STRINGS = 0x001C0001;
 		// const int CHUNK_XML_END_NAMESPACE = 0x00100101;
-		// const int CHUNK_XML_END_TAG = 0x00100103;
+		const int CHUNK_XML_END_TAG = 0x00100103;
 		// const int CHUNK_XML_START_NAMESPACE = 0x00100100;
 		const int CHUNK_XML_START_TAG = 0x00100102;
 		// const int CHUNK_XML_TEXT = 0x00100104;
@@ -536,11 +644,11 @@ class EditorExportAndroid : public EditorExportPlatform {
 		uint32_t ofs = 8;
 
 		uint32_t string_count = 0;
-		uint32_t styles_count = 0;
+		//uint32_t styles_count = 0;
 		uint32_t string_flags = 0;
 		uint32_t string_data_offset = 0;
 
-		uint32_t styles_offset = 0;
+		//uint32_t styles_offset = 0;
 		uint32_t string_table_begins = 0;
 		uint32_t string_table_ends = 0;
 		Vector<uint8_t> stable_extra;
@@ -556,22 +664,29 @@ class EditorExportAndroid : public EditorExportPlatform {
 		bool screen_support_large = p_preset->get("screen/support_large");
 		bool screen_support_xlarge = p_preset->get("screen/support_xlarge");
 
-		String user_perms[MAX_USER_PERMISSIONS];
-
-		for (int i = 0; i < MAX_USER_PERMISSIONS; i++) {
-
-			user_perms[i] = p_preset->get("user_permissions/" + itos(i));
-		}
-
-		Set<String> perms;
+		Vector<String> perms;
 
 		const char **aperms = android_perms;
 		while (*aperms) {
 
 			bool enabled = p_preset->get("permissions/" + String(*aperms).to_lower());
 			if (enabled)
-				perms.insert(String(*aperms));
+				perms.push_back("android.permission." + String(*aperms));
 			aperms++;
+		}
+
+		PoolStringArray user_perms = p_preset->get("permissions/custom_permissions");
+
+		for (int i = 0; i < user_perms.size(); i++) {
+			String user_perm = user_perms[i].strip_edges();
+			if (!user_perm.empty()) {
+				perms.push_back(user_perm);
+			}
+		}
+
+		if (p_give_internet) {
+			if (perms.find("android.permission.INTERNET") == -1)
+				perms.push_back("android.permission.INTERNET");
 		}
 
 		while (ofs < (uint32_t)p_manifest.size()) {
@@ -586,16 +701,16 @@ class EditorExportAndroid : public EditorExportPlatform {
 					int iofs = ofs + 8;
 
 					string_count = decode_uint32(&p_manifest[iofs]);
-					styles_count = decode_uint32(&p_manifest[iofs + 4]);
+					//styles_count = decode_uint32(&p_manifest[iofs + 4]);
 					string_flags = decode_uint32(&p_manifest[iofs + 8]);
 					string_data_offset = decode_uint32(&p_manifest[iofs + 12]);
-					styles_offset = decode_uint32(&p_manifest[iofs + 16]);
+					//styles_offset = decode_uint32(&p_manifest[iofs + 16]);
 					/*
 					printf("string count: %i\n",string_count);
 					printf("flags: %i\n",string_flags);
 					printf("sdata ofs: %i\n",string_data_offset);
 					printf("styles ofs: %i\n",styles_offset);
-	*/
+					*/
 					uint32_t st_offset = iofs + 20;
 					string_table.resize(string_count);
 					uint32_t string_end = 0;
@@ -618,24 +733,19 @@ class EditorExportAndroid : public EditorExportPlatform {
 							ucstring.resize(len + 1);
 							for (uint32_t j = 0; j < len; j++) {
 								uint16_t c = decode_uint16(&p_manifest[string_at + 2 + 2 * j]);
-								ucstring[j] = c;
+								ucstring.write[j] = c;
 							}
 							string_end = MAX(string_at + 2 + 2 * len, string_end);
-							ucstring[len] = 0;
-							string_table[i] = ucstring.ptr();
+							ucstring.write[len] = 0;
+							string_table.write[i] = ucstring.ptr();
 						}
-
-						//print_line("String "+itos(i)+": "+string_table[i]);
 					}
 
 					for (uint32_t i = string_end; i < (ofs + size); i++) {
 						stable_extra.push_back(p_manifest[i]);
 					}
 
-					//printf("stable extra: %i\n",int(stable_extra.size()));
 					string_table_ends = ofs + size;
-
-					//print_line("STABLE SIZE: "+itos(size)+" ACTUAL: "+itos(string_table_ends));
 
 				} break;
 				case CHUNK_XML_START_TAG: {
@@ -667,79 +777,131 @@ class EditorExportAndroid : public EditorExportPlatform {
 
 						//replace project information
 						if (tname == "manifest" && attrname == "package") {
-
-							print_line("FOUND package");
-							string_table[attr_value] = get_package_name(package_name);
+							string_table.write[attr_value] = get_package_name(package_name);
 						}
 
-						if (tname == "manifest" && /*nspace=="android" &&*/ attrname == "versionCode") {
-
-							print_line("FOUND versionCode");
-							encode_uint32(version_code, &p_manifest[iofs + 16]);
+						if (tname == "manifest" && attrname == "versionCode") {
+							encode_uint32(version_code, &p_manifest.write[iofs + 16]);
 						}
 
-						if (tname == "manifest" && /*nspace=="android" &&*/ attrname == "versionName") {
-
-							print_line("FOUND versionName");
+						if (tname == "manifest" && attrname == "versionName") {
 							if (attr_value == 0xFFFFFFFF) {
 								WARN_PRINT("Version name in a resource, should be plaintext")
 							} else
-								string_table[attr_value] = version_name;
+								string_table.write[attr_value] = version_name;
 						}
 
-						if (tname == "activity" && /*nspace=="android" &&*/ attrname == "screenOrientation") {
+						if (tname == "activity" && attrname == "screenOrientation") {
 
-							encode_uint32(orientation == 0 ? 0 : 1, &p_manifest[iofs + 16]);
-						}
-
-						if (tname == "uses-feature" && /*nspace=="android" &&*/ attrname == "glEsVersion") {
-							print_line("version number: " + itos(decode_uint32(&p_manifest[iofs + 16])));
-						}
-
-						if (tname == "uses-permission" && /*nspace=="android" &&*/ attrname == "name") {
-
-							if (value.begins_with("godot.custom")) {
-
-								int which = value.get_slice(".", 2).to_int();
-								if (which >= 0 && which < MAX_USER_PERMISSIONS && user_perms[which].strip_edges() != "") {
-
-									string_table[attr_value] = user_perms[which].strip_edges();
-								}
-
-							} else if (value.begins_with("godot.")) {
-								String perm = value.get_slice(".", 1);
-
-								if (perms.has(perm) || (p_give_internet && perm == "INTERNET")) {
-
-									print_line("PERM: " + perm);
-									string_table[attr_value] = "android.permission." + perm;
-								}
-							}
+							encode_uint32(orientation == 0 ? 0 : 1, &p_manifest.write[iofs + 16]);
 						}
 
 						if (tname == "supports-screens") {
 
 							if (attrname == "smallScreens") {
 
-								encode_uint32(screen_support_small ? 0xFFFFFFFF : 0, &p_manifest[iofs + 16]);
+								encode_uint32(screen_support_small ? 0xFFFFFFFF : 0, &p_manifest.write[iofs + 16]);
 
 							} else if (attrname == "normalScreens") {
 
-								encode_uint32(screen_support_normal ? 0xFFFFFFFF : 0, &p_manifest[iofs + 16]);
+								encode_uint32(screen_support_normal ? 0xFFFFFFFF : 0, &p_manifest.write[iofs + 16]);
 
 							} else if (attrname == "largeScreens") {
 
-								encode_uint32(screen_support_large ? 0xFFFFFFFF : 0, &p_manifest[iofs + 16]);
+								encode_uint32(screen_support_large ? 0xFFFFFFFF : 0, &p_manifest.write[iofs + 16]);
 
 							} else if (attrname == "xlargeScreens") {
 
-								encode_uint32(screen_support_xlarge ? 0xFFFFFFFF : 0, &p_manifest[iofs + 16]);
+								encode_uint32(screen_support_xlarge ? 0xFFFFFFFF : 0, &p_manifest.write[iofs + 16]);
 							}
 						}
 
 						iofs += 20;
 					}
 
+				} break;
+				case CHUNK_XML_END_TAG: {
+					int iofs = ofs + 8;
+					uint32_t name = decode_uint32(&p_manifest[iofs + 12]);
+					String tname = string_table[name];
+
+					if (tname == "manifest") {
+
+						// save manifest ending so we can restore it
+						Vector<uint8_t> manifest_end;
+						uint32_t manifest_cur_size = p_manifest.size();
+
+						manifest_end.resize(p_manifest.size() - ofs);
+						memcpy(manifest_end.ptrw(), &p_manifest[ofs], manifest_end.size());
+
+						int32_t attr_name_string = string_table.find("name");
+						ERR_EXPLAIN("Template does not have 'name' attribute");
+						ERR_FAIL_COND(attr_name_string == -1);
+
+						int32_t ns_android_string = string_table.find("android");
+						ERR_EXPLAIN("Template does not have 'android' namespace");
+						ERR_FAIL_COND(ns_android_string == -1);
+
+						int32_t attr_uses_permission_string = string_table.find("uses-permission");
+						if (attr_uses_permission_string == -1) {
+							string_table.push_back("uses-permission");
+							attr_uses_permission_string = string_table.size() - 1;
+						}
+
+						for (int i = 0; i < perms.size(); ++i) {
+							print_line("Adding permission " + perms[i]);
+
+							manifest_cur_size += 56 + 24; // node + end node
+							p_manifest.resize(manifest_cur_size);
+
+							// Add permission to the string pool
+							int32_t perm_string = string_table.find(perms[i]);
+							if (perm_string == -1) {
+								string_table.push_back(perms[i]);
+								perm_string = string_table.size() - 1;
+							}
+
+							// start tag
+							encode_uint16(0x102, &p_manifest.write[ofs]); // type
+							encode_uint16(16, &p_manifest.write[ofs + 2]); // headersize
+							encode_uint32(56, &p_manifest.write[ofs + 4]); // size
+							encode_uint32(0, &p_manifest.write[ofs + 8]); // lineno
+							encode_uint32(-1, &p_manifest.write[ofs + 12]); // comment
+							encode_uint32(-1, &p_manifest.write[ofs + 16]); // ns
+							encode_uint32(attr_uses_permission_string, &p_manifest.write[ofs + 20]); // name
+							encode_uint16(20, &p_manifest.write[ofs + 24]); // attr_start
+							encode_uint16(20, &p_manifest.write[ofs + 26]); // attr_size
+							encode_uint16(1, &p_manifest.write[ofs + 28]); // num_attrs
+							encode_uint16(0, &p_manifest.write[ofs + 30]); // id_index
+							encode_uint16(0, &p_manifest.write[ofs + 32]); // class_index
+							encode_uint16(0, &p_manifest.write[ofs + 34]); // style_index
+
+							// attribute
+							encode_uint32(ns_android_string, &p_manifest.write[ofs + 36]); // ns
+							encode_uint32(attr_name_string, &p_manifest.write[ofs + 40]); // 'name'
+							encode_uint32(perm_string, &p_manifest.write[ofs + 44]); // raw_value
+							encode_uint16(8, &p_manifest.write[ofs + 48]); // typedvalue_size
+							p_manifest.write[ofs + 50] = 0; // typedvalue_always0
+							p_manifest.write[ofs + 51] = 0x03; // typedvalue_type (string)
+							encode_uint32(perm_string, &p_manifest.write[ofs + 52]); // typedvalue reference
+
+							ofs += 56;
+
+							// end tag
+							encode_uint16(0x103, &p_manifest.write[ofs]); // type
+							encode_uint16(16, &p_manifest.write[ofs + 2]); // headersize
+							encode_uint32(24, &p_manifest.write[ofs + 4]); // size
+							encode_uint32(0, &p_manifest.write[ofs + 8]); // lineno
+							encode_uint32(-1, &p_manifest.write[ofs + 12]); // comment
+							encode_uint32(-1, &p_manifest.write[ofs + 16]); // ns
+							encode_uint32(attr_uses_permission_string, &p_manifest.write[ofs + 20]); // name
+
+							ofs += 24;
+						}
+
+						// copy footer back in
+						memcpy(&p_manifest.write[ofs], manifest_end.ptr(), manifest_end.size());
+					}
 				} break;
 			}
 
@@ -753,25 +915,25 @@ class EditorExportAndroid : public EditorExportPlatform {
 
 		for (uint32_t i = 0; i < string_table_begins; i++) {
 
-			ret[i] = p_manifest[i];
+			ret.write[i] = p_manifest[i];
 		}
 
 		ofs = 0;
 		for (int i = 0; i < string_table.size(); i++) {
 
-			encode_uint32(ofs, &ret[string_table_begins + i * 4]);
+			encode_uint32(ofs, &ret.write[string_table_begins + i * 4]);
 			ofs += string_table[i].length() * 2 + 2 + 2;
-			//print_line("ofs: "+itos(i)+": "+itos(ofs));
 		}
+
 		ret.resize(ret.size() + ofs);
-		uint8_t *chars = &ret[ret.size() - ofs];
+		string_data_offset = ret.size() - ofs;
+		uint8_t *chars = &ret.write[string_data_offset];
 		for (int i = 0; i < string_table.size(); i++) {
 
 			String s = string_table[i];
-			//print_line("savint string :"+s);
 			encode_uint16(s.length(), chars);
 			chars += 2;
-			for (int j = 0; j < s.length(); j++) { //include zero?
+			for (int j = 0; j < s.length(); j++) {
 				encode_uint16(s[j], chars);
 				chars += 2;
 			}
@@ -783,6 +945,7 @@ class EditorExportAndroid : public EditorExportPlatform {
 			ret.push_back(stable_extra[i]);
 		}
 
+		//pad
 		while (ret.size() % 4)
 			ret.push_back(0);
 
@@ -791,15 +954,15 @@ class EditorExportAndroid : public EditorExportPlatform {
 		uint32_t extra = (p_manifest.size() - string_table_ends);
 		ret.resize(new_stable_end + extra);
 		for (uint32_t i = 0; i < extra; i++)
-			ret[new_stable_end + i] = p_manifest[string_table_ends + i];
+			ret.write[new_stable_end + i] = p_manifest[string_table_ends + i];
 
 		while (ret.size() % 4)
 			ret.push_back(0);
-		encode_uint32(ret.size(), &ret[4]); //update new file size
+		encode_uint32(ret.size(), &ret.write[4]); //update new file size
 
-		encode_uint32(new_stable_end - 8, &ret[12]); //update new string table size
-
-		//print_line("file size: "+itos(ret.size()));
+		encode_uint32(new_stable_end - 8, &ret.write[12]); //update new string table size
+		encode_uint32(string_table.size(), &ret.write[16]); //update new number of strings
+		encode_uint32(string_data_offset - 8, &ret.write[28]); //update new string data offset
 
 		p_manifest = ret;
 	}
@@ -821,9 +984,9 @@ class EditorExportAndroid : public EditorExportPlatform {
 			Vector<uint8_t> str8;
 			str8.resize(len + 1);
 			for (uint32_t i = 0; i < len; i++) {
-				str8[i] = p_bytes[offset + i];
+				str8.write[i] = p_bytes[offset + i];
 			}
-			str8[len] = 0;
+			str8.write[len] = 0;
 			String str;
 			str.parse_utf8((const char *)str8.ptr());
 			return str;
@@ -842,7 +1005,6 @@ class EditorExportAndroid : public EditorExportPlatform {
 	void _fix_resources(const Ref<EditorExportPreset> &p_preset, Vector<uint8_t> &p_manifest) {
 
 		const int UTF8_FLAG = 0x00000100;
-		print_line("*******************GORRRGLE***********************");
 
 		uint32_t string_block_len = decode_uint32(&p_manifest[16]);
 		uint32_t string_count = decode_uint32(&p_manifest[20]);
@@ -887,18 +1049,18 @@ class EditorExportAndroid : public EditorExportPlatform {
 
 		for (uint32_t i = 0; i < string_table_begins; i++) {
 
-			ret[i] = p_manifest[i];
+			ret.write[i] = p_manifest[i];
 		}
 
 		int ofs = 0;
 		for (int i = 0; i < string_table.size(); i++) {
 
-			encode_uint32(ofs, &ret[string_table_begins + i * 4]);
+			encode_uint32(ofs, &ret.write[string_table_begins + i * 4]);
 			ofs += string_table[i].length() * 2 + 2 + 2;
 		}
 
 		ret.resize(ret.size() + ofs);
-		uint8_t *chars = &ret[ret.size() - ofs];
+		uint8_t *chars = &ret.write[ret.size() - ofs];
 		for (int i = 0; i < string_table.size(); i++) {
 
 			String s = string_table[i];
@@ -917,69 +1079,99 @@ class EditorExportAndroid : public EditorExportPlatform {
 			ret.push_back(0);
 
 		//change flags to not use utf8
-		encode_uint32(string_flags & ~0x100, &ret[28]);
+		encode_uint32(string_flags & ~0x100, &ret.write[28]);
 		//change length
-		encode_uint32(ret.size() - 12, &ret[16]);
+		encode_uint32(ret.size() - 12, &ret.write[16]);
 		//append the rest...
 		int rest_from = 12 + string_block_len;
 		int rest_to = ret.size();
 		int rest_len = (p_manifest.size() - rest_from);
 		ret.resize(ret.size() + (p_manifest.size() - rest_from));
 		for (int i = 0; i < rest_len; i++) {
-			ret[rest_to + i] = p_manifest[rest_from + i];
+			ret.write[rest_to + i] = p_manifest[rest_from + i];
 		}
 		//finally update the size
-		encode_uint32(ret.size(), &ret[4]);
+		encode_uint32(ret.size(), &ret.write[4]);
 
 		p_manifest = ret;
 		//printf("end\n");
 	}
 
-public:
-	enum {
-		MAX_USER_PERMISSIONS = 20
-	};
+	static Vector<String> get_enabled_abis(const Ref<EditorExportPreset> &p_preset) {
+		Vector<String> abis = get_abis();
+		Vector<String> enabled_abis;
+		for (int i = 0; i < abis.size(); ++i) {
+			bool is_enabled = p_preset->get("architectures/" + abis[i]);
+			if (is_enabled) {
+				enabled_abis.push_back(abis[i]);
+			}
+		}
+		return enabled_abis;
+	}
 
+public:
 	typedef Error (*EditorExportSaveFunction)(void *p_userdata, const String &p_path, const Vector<uint8_t> &p_data, int p_file, int p_total);
 
 public:
 	virtual void get_preset_features(const Ref<EditorExportPreset> &p_preset, List<String> *r_features) {
 
-		int api = p_preset->get("graphics/api");
+		// Re-enable when a GLES 2.0 backend is read
+		/*int api = p_preset->get("graphics/api");
 		if (api == 0)
 			r_features->push_back("etc");
-		else
+		else*/
+		String driver = ProjectSettings::get_singleton()->get("rendering/quality/driver/driver_name");
+		if (driver == "GLES2") {
+			r_features->push_back("etc");
+		} else {
 			r_features->push_back("etc2");
+		}
+
+		Vector<String> abis = get_enabled_abis(p_preset);
+		for (int i = 0; i < abis.size(); ++i) {
+			r_features->push_back(abis[i]);
+		}
 	}
 
 	virtual void get_export_options(List<ExportOption> *r_options) {
 
-		r_options->push_back(ExportOption(PropertyInfo(Variant::INT, "graphics/api", PROPERTY_HINT_ENUM, "OpenGL ES 2.0,OpenGL ES 3.0"), 1));
 		r_options->push_back(ExportOption(PropertyInfo(Variant::BOOL, "graphics/32_bits_framebuffer"), true));
 		r_options->push_back(ExportOption(PropertyInfo(Variant::BOOL, "one_click_deploy/clear_previous_install"), true));
-		r_options->push_back(ExportOption(PropertyInfo(Variant::STRING, "custom_package/debug", PROPERTY_HINT_GLOBAL_FILE, "apk"), ""));
-		r_options->push_back(ExportOption(PropertyInfo(Variant::STRING, "custom_package/release", PROPERTY_HINT_GLOBAL_FILE, "apk"), ""));
+		r_options->push_back(ExportOption(PropertyInfo(Variant::STRING, "custom_package/debug", PROPERTY_HINT_GLOBAL_FILE, "*.apk"), ""));
+		r_options->push_back(ExportOption(PropertyInfo(Variant::STRING, "custom_package/release", PROPERTY_HINT_GLOBAL_FILE, "*.apk"), ""));
 		r_options->push_back(ExportOption(PropertyInfo(Variant::STRING, "command_line/extra_args"), ""));
-		r_options->push_back(ExportOption(PropertyInfo(Variant::INT, "version/code", PROPERTY_HINT_RANGE, "1,65535,1"), 1));
+		r_options->push_back(ExportOption(PropertyInfo(Variant::INT, "version/code", PROPERTY_HINT_RANGE, "1,4096,1,or_greater"), 1));
 		r_options->push_back(ExportOption(PropertyInfo(Variant::STRING, "version/name"), "1.0"));
-		r_options->push_back(ExportOption(PropertyInfo(Variant::STRING, "package/unique_name"), "org.godotengine.$genname"));
-		r_options->push_back(ExportOption(PropertyInfo(Variant::STRING, "package/name"), ""));
-		r_options->push_back(ExportOption(PropertyInfo(Variant::STRING, "package/icon", PROPERTY_HINT_FILE, "png"), ""));
+		r_options->push_back(ExportOption(PropertyInfo(Variant::STRING, "package/unique_name", PROPERTY_HINT_PLACEHOLDER_TEXT, "com.example.$genname"), ""));
+		r_options->push_back(ExportOption(PropertyInfo(Variant::STRING, "package/name", PROPERTY_HINT_PLACEHOLDER_TEXT, "Game Name"), ""));
 		r_options->push_back(ExportOption(PropertyInfo(Variant::BOOL, "package/signed"), true));
-		r_options->push_back(ExportOption(PropertyInfo(Variant::BOOL, "architecture/arm"), true));
-		r_options->push_back(ExportOption(PropertyInfo(Variant::BOOL, "architecture/x86"), false));
 		r_options->push_back(ExportOption(PropertyInfo(Variant::BOOL, "screen/immersive_mode"), true));
 		r_options->push_back(ExportOption(PropertyInfo(Variant::INT, "screen/orientation", PROPERTY_HINT_ENUM, "Landscape,Portrait"), 0));
 		r_options->push_back(ExportOption(PropertyInfo(Variant::BOOL, "screen/support_small"), true));
 		r_options->push_back(ExportOption(PropertyInfo(Variant::BOOL, "screen/support_normal"), true));
 		r_options->push_back(ExportOption(PropertyInfo(Variant::BOOL, "screen/support_large"), true));
 		r_options->push_back(ExportOption(PropertyInfo(Variant::BOOL, "screen/support_xlarge"), true));
-		r_options->push_back(ExportOption(PropertyInfo(Variant::STRING, "keystore/release", PROPERTY_HINT_GLOBAL_FILE, "keystore"), ""));
+		r_options->push_back(ExportOption(PropertyInfo(Variant::BOOL, "screen/opengl_debug"), false));
+
+		for (unsigned int i = 0; i < sizeof(launcher_icons) / sizeof(launcher_icons[0]); ++i) {
+			r_options->push_back(ExportOption(PropertyInfo(Variant::STRING, launcher_icons[i].option_id, PROPERTY_HINT_FILE, "*.png"), ""));
+		}
+
+		r_options->push_back(ExportOption(PropertyInfo(Variant::STRING, "keystore/release", PROPERTY_HINT_GLOBAL_FILE, "*.keystore"), ""));
 		r_options->push_back(ExportOption(PropertyInfo(Variant::STRING, "keystore/release_user"), ""));
 		r_options->push_back(ExportOption(PropertyInfo(Variant::STRING, "keystore/release_password"), ""));
 		r_options->push_back(ExportOption(PropertyInfo(Variant::BOOL, "apk_expansion/enable"), false));
 		r_options->push_back(ExportOption(PropertyInfo(Variant::STRING, "apk_expansion/SALT"), ""));
 		r_options->push_back(ExportOption(PropertyInfo(Variant::STRING, "apk_expansion/public_key", PROPERTY_HINT_MULTILINE_TEXT), ""));
+
+		Vector<String> abis = get_abis();
+		for (int i = 0; i < abis.size(); ++i) {
+			String abi = abis[i];
+			bool is_default = (abi == "armeabi-v7a");
+			r_options->push_back(ExportOption(PropertyInfo(Variant::BOOL, "architectures/" + abi), is_default));
+		}
+
+		r_options->push_back(ExportOption(PropertyInfo(Variant::POOL_STRING_ARRAY, "permissions/custom_permissions"), PoolStringArray()));
 
 		const char **perms = android_perms;
 		while (*perms) {
@@ -987,13 +1179,6 @@ public:
 			r_options->push_back(ExportOption(PropertyInfo(Variant::BOOL, "permissions/" + String(*perms).to_lower()), false));
 			perms++;
 		}
-
-		for (int i = 0; i < MAX_USER_PERMISSIONS; i++) {
-
-			r_options->push_back(ExportOption(PropertyInfo(Variant::STRING, "user_permissions/" + itos(i)), false));
-		}
-
-		//r_options->push_back( PropertyInfo( Variant::INT, "resources/pack_mode", PROPERTY_HINT_ENUM,"Copy,Single Exec.,Pack (.pck),Bundles (Optical)"));
 	}
 
 	virtual String get_name() const {
@@ -1011,7 +1196,10 @@ public:
 	virtual bool poll_devices() {
 
 		bool dc = devices_changed;
-		devices_changed = false;
+		if (dc) {
+			// don't clear unless we're reporting true, to avoid race
+			devices_changed = false;
+		}
 		return dc;
 	}
 
@@ -1066,7 +1254,7 @@ public:
 		if (use_reverse)
 			p_debug_flags |= DEBUG_FLAG_REMOTE_DEBUG_LOCALHOST;
 
-		String export_to = EditorSettings::get_singleton()->get_settings_path() + "/tmp/tmpexport.apk";
+		String export_to = EditorSettings::get_singleton()->get_cache_dir().plus_file("tmpexport.apk");
 		Error err = export_project(p_preset, true, export_to, p_debug_flags);
 		if (err) {
 			device_lock->unlock();
@@ -1081,7 +1269,7 @@ public:
 		String package_name = p_preset->get("package/unique_name");
 
 		if (remove_prev) {
-			ep.step("Uninstalling..", 1);
+			ep.step("Uninstalling...", 1);
 
 			print_line("Uninstalling previous version: " + devices[p_device].name);
 
@@ -1093,8 +1281,8 @@ public:
 			err = OS::get_singleton()->execute(adb, args, true, NULL, NULL, &rv);
 		}
 
-		print_line("Installing into device (please wait..): " + devices[p_device].name);
-		ep.step("Installing to Device (please wait..)..", 2);
+		print_line("Installing to device (please wait...): " + devices[p_device].name);
+		ep.step("Installing to device (please wait...)", 2);
 
 		args.clear();
 		args.push_back("-s");
@@ -1160,7 +1348,7 @@ public:
 			}
 		}
 
-		ep.step("Running on Device..", 3);
+		ep.step("Running on Device...", 3);
 		args.clear();
 		args.push_back("-s");
 		args.push_back(devices[p_device].id);
@@ -1192,17 +1380,33 @@ public:
 
 	virtual bool can_export(const Ref<EditorExportPreset> &p_preset, String &r_error, bool &r_missing_templates) const {
 
+		String err;
 		r_missing_templates = find_export_template("android_debug.apk") == String() || find_export_template("android_release.apk") == String();
+
+		if (p_preset->get("custom_package/debug") != "") {
+			if (FileAccess::exists(p_preset->get("custom_package/debug"))) {
+				r_missing_templates = false;
+			} else {
+				err += "Custom debug package not found.\n";
+			}
+		}
+
+		if (p_preset->get("custom_package/release") != "") {
+			if (FileAccess::exists(p_preset->get("custom_package/release"))) {
+				r_missing_templates = false;
+			} else {
+				err += "Custom release package not found.\n";
+			}
+		}
 
 		bool valid = !r_missing_templates;
 
 		String adb = EditorSettings::get_singleton()->get("export/android/adb");
-		String err;
 
 		if (!FileAccess::exists(adb)) {
 
 			valid = false;
-			err += "ADB executable not configured in editor settings.\n";
+			err += "ADB executable not configured in the Editor Settings.\n";
 		}
 
 		String js = EditorSettings::get_singleton()->get("export/android/jarsigner");
@@ -1210,7 +1414,7 @@ public:
 		if (!FileAccess::exists(js)) {
 
 			valid = false;
-			err += "OpenJDK 6 jarsigner not configured in editor settings.\n";
+			err += "OpenJDK 8 jarsigner not configured in the Editor Settings.\n";
 		}
 
 		String dk = EditorSettings::get_singleton()->get("export/android/debug_keystore");
@@ -1218,7 +1422,7 @@ public:
 		if (!FileAccess::exists(dk)) {
 
 			valid = false;
-			err += "Debug Keystore not configured in editor settings.\n";
+			err += "Debug keystore not configured in the Editor Settings.\n";
 		}
 
 		bool apk_expansion = p_preset->get("apk_expansion/enable");
@@ -1237,19 +1441,32 @@ public:
 			if (apk_expansion_pkey == "") {
 				valid = false;
 
-				err += "Invalid public key for apk expansion.\n";
+				err += "Invalid public key for APK expansion.\n";
 			}
+		}
+
+		String pn = p_preset->get("package/unique_name");
+		String pn_err;
+
+		if (!is_package_name_valid(get_package_name(pn), &pn_err)) {
+
+			valid = false;
+			err += "Invalid package name - " + pn_err + "\n";
 		}
 
 		r_error = err;
 		return valid;
 	}
 
-	virtual String get_binary_extension() const {
-		return "apk";
+	virtual List<String> get_binary_extensions(const Ref<EditorExportPreset> &p_preset) const {
+		List<String> list;
+		list.push_back("apk");
+		return list;
 	}
 
 	virtual Error export_project(const Ref<EditorExportPreset> &p_preset, bool p_debug, const String &p_path, int p_flags = 0) {
+
+		ExportNotifier notifier(*this, p_preset, p_debug, p_path, p_flags);
 
 		String src_apk;
 
@@ -1291,15 +1508,12 @@ public:
 		zlib_filefunc_def io2 = io;
 		FileAccess *dst_f = NULL;
 		io2.opaque = &dst_f;
-		String unaligned_path = EditorSettings::get_singleton()->get_settings_path() + "/tmp/tmpexport-unaligned.apk";
+		String unaligned_path = EditorSettings::get_singleton()->get_cache_dir().plus_file("tmpexport-unaligned.apk");
 		zipFile unaligned_apk = zipOpen2(unaligned_path.utf8().get_data(), APPEND_STATUS_CREATE, NULL, &io2);
-
-		bool export_x86 = p_preset->get("architecture/x86");
-		bool export_arm = p_preset->get("architecture/arm");
-		bool export_arm64 = p_preset->get("architecture/arm64");
 
 		bool use_32_fb = p_preset->get("graphics/32_bits_framebuffer");
 		bool immersive = p_preset->get("screen/immersive_mode");
+		bool debug_opengl = p_preset->get("screen/opengl_debug");
 
 		bool _signed = p_preset->get("package/signed");
 
@@ -1317,6 +1531,8 @@ public:
 		String release_username = p_preset->get("keystore/release_user");
 		String release_password = p_preset->get("keystore/release_password");
 
+		Vector<String> enabled_abis = get_enabled_abis(p_preset);
+
 		while (ret == UNZ_OK) {
 
 			//get filename
@@ -1333,7 +1549,7 @@ public:
 
 			//read
 			unzOpenCurrentFile(pkg);
-			unzReadCurrentFile(pkg, data.ptr(), data.size());
+			unzReadCurrentFile(pkg, data.ptrw(), data.size());
 			unzCloseCurrentFile(pkg);
 
 			//write
@@ -1348,24 +1564,21 @@ public:
 				_fix_resources(p_preset, data);
 			}
 
-			if (file == "res/drawable/icon.png") {
-
-				String icon = p_preset->get("package/icon");
-				icon = icon.strip_edges();
+			if (file == "res/drawable-nodpi-v4/icon.png") {
 				bool found = false;
-
-				if (icon != "" && icon.ends_with(".png")) {
-
-					FileAccess *f = FileAccess::open(icon, FileAccess::READ);
-					if (f) {
-
-						data.resize(f->get_len());
-						f->get_buffer(data.ptr(), data.size());
-						memdelete(f);
-						found = true;
+				for (unsigned int i = 0; i < sizeof(launcher_icons) / sizeof(launcher_icons[0]); ++i) {
+					String icon_path = String(p_preset->get(launcher_icons[i].option_id)).strip_edges();
+					if (icon_path != "" && icon_path.ends_with(".png")) {
+						FileAccess *f = FileAccess::open(icon_path, FileAccess::READ);
+						if (f) {
+							data.resize(f->get_len());
+							f->get_buffer(data.ptrw(), data.size());
+							memdelete(f);
+							found = true;
+							break;
+						}
 					}
 				}
-
 				if (!found) {
 
 					String appicon = ProjectSettings::get_singleton()->get("application/config/icon");
@@ -1373,32 +1586,32 @@ public:
 						FileAccess *f = FileAccess::open(appicon, FileAccess::READ);
 						if (f) {
 							data.resize(f->get_len());
-							f->get_buffer(data.ptr(), data.size());
+							f->get_buffer(data.ptrw(), data.size());
 							memdelete(f);
 						}
 					}
 				}
 			}
 
-			if (file == "lib/x86/*.so" && !export_x86) {
-				skip = true;
-			}
-
-			if (file.match("lib/armeabi*/*.so") && !export_arm) {
-				skip = true;
-			}
-
-			if (file.match("lib/arm64*/*.so") && !export_arm64) {
-				skip = true;
+			if (file.ends_with(".so")) {
+				bool enabled = false;
+				for (int i = 0; i < enabled_abis.size(); ++i) {
+					if (file.begins_with("lib/" + enabled_abis[i] + "/")) {
+						enabled = true;
+						break;
+					}
+				}
+				if (!enabled) {
+					skip = true;
+				}
 			}
 
 			if (file.begins_with("META-INF") && _signed) {
 				skip = true;
 			}
 
-			print_line("ADDING: " + file);
-
 			if (!skip) {
+				print_line("ADDING: " + file);
 
 				// Respect decision on compression made by AAPT for the export template
 				const bool uncompressed = info.compression_method == 0;
@@ -1423,7 +1636,7 @@ public:
 			ret = unzGoToNextFile(pkg);
 		}
 
-		ep.step("Adding Files..", 1);
+		ep.step("Adding Files...", 1);
 		Error err = OK;
 		Vector<String> cl = cmdline.strip_edges().split(" ");
 		for (int i = 0; i < cl.size(); i++) {
@@ -1447,6 +1660,10 @@ public:
 				cl.push_back(passwd);
 			}*/
 
+			APKExportData ed;
+			ed.ep = &ep;
+			ed.apk = unaligned_apk;
+			err = export_project_files(p_preset, ignore_apk_file, &ed, save_apk_so);
 		} else {
 			//all files
 
@@ -1455,8 +1672,11 @@ public:
 				String apkfname = "main." + itos(version_code) + "." + get_package_name(package_name) + ".obb";
 				String fullpath = p_path.get_base_dir().plus_file(apkfname);
 				err = save_pack(p_preset, fullpath);
+
 				if (err != OK) {
+					unzClose(pkg);
 					EditorNode::add_io_error("Could not write expansion package file: " + apkfname);
+
 					return OK;
 				}
 
@@ -1472,7 +1692,20 @@ public:
 				ed.ep = &ep;
 				ed.apk = unaligned_apk;
 
-				err = export_project_files(p_preset, save_apk_file, &ed);
+				err = export_project_files(p_preset, save_apk_file, &ed, save_apk_so);
+			}
+		}
+
+		if (!err) {
+			APKExportData ed;
+			ed.ep = &ep;
+			ed.apk = unaligned_apk;
+			for (unsigned int i = 0; i < sizeof(launcher_icons) / sizeof(launcher_icons[0]); ++i) {
+				String icon_path = String(p_preset->get(launcher_icons[i].option_id)).strip_edges();
+				if (icon_path != "" && icon_path.ends_with(".png") && FileAccess::exists(icon_path)) {
+					Vector<uint8_t> data = FileAccess::get_file_as_array(icon_path);
+					store_in_apk(&ed, launcher_icons[i].export_path, data);
+				}
 			}
 		}
 
@@ -1482,19 +1715,25 @@ public:
 		if (immersive)
 			cl.push_back("--use_immersive");
 
+		if (debug_opengl)
+			cl.push_back("--debug_opengl");
+
 		if (cl.size()) {
 			//add comandline
 			Vector<uint8_t> clf;
 			clf.resize(4);
-			encode_uint32(cl.size(), &clf[0]);
+			encode_uint32(cl.size(), &clf.write[0]);
 			for (int i = 0; i < cl.size(); i++) {
 
+				print_line(itos(i) + " param: " + cl[i]);
 				CharString txt = cl[i].utf8();
 				int base = clf.size();
-				clf.resize(base + 4 + txt.length());
-				encode_uint32(txt.length(), &clf[base]);
-				copymem(&clf[base + 4], txt.ptr(), txt.length());
-				print_line(itos(i) + " param: " + cl[i]);
+				int length = txt.length();
+				if (!length)
+					continue;
+				clf.resize(base + 4 + length);
+				encode_uint32(length, &clf.write[base]);
+				copymem(&clf.write[base + 4], txt.ptr(), length);
 			}
 
 			zip_fileinfo zipfi = get_zip_fileinfo();
@@ -1525,7 +1764,7 @@ public:
 
 			String jarsigner = EditorSettings::get_singleton()->get("export/android/jarsigner");
 			if (!FileAccess::exists(jarsigner)) {
-				EditorNode::add_io_error("'jarsigner' could not be found.\nPlease supply a path in the editor settings.\nResulting apk is unsigned.");
+				EditorNode::add_io_error("'jarsigner' could not be found.\nPlease supply a path in the Editor Settings.\nThe resulting APK is unsigned.");
 				return OK;
 			}
 
@@ -1537,14 +1776,14 @@ public:
 				password = EditorSettings::get_singleton()->get("export/android/debug_keystore_pass");
 				user = EditorSettings::get_singleton()->get("export/android/debug_keystore_user");
 
-				ep.step("Signing Debug APK..", 103);
+				ep.step("Signing debug APK...", 103);
 
 			} else {
 				keystore = release_keystore;
 				password = release_password;
 				user = release_username;
 
-				ep.step("Signing Release APK..", 103);
+				ep.step("Signing release APK...", 103);
 			}
 
 			if (!FileAccess::exists(keystore)) {
@@ -1554,9 +1793,9 @@ public:
 
 			List<String> args;
 			args.push_back("-digestalg");
-			args.push_back("SHA1");
+			args.push_back("SHA-256");
 			args.push_back("-sigalg");
-			args.push_back("MD5withRSA");
+			args.push_back("SHA256withRSA");
 			String tsa_url = EditorSettings::get_singleton()->get("export/android/timestamping_authority_url");
 			if (tsa_url != "") {
 				args.push_back("-tsa");
@@ -1576,7 +1815,7 @@ public:
 				return ERR_CANT_CREATE;
 			}
 
-			ep.step("Verifying APK..", 104);
+			ep.step("Verifying APK...", 104);
 
 			args.clear();
 			args.push_back("-verify");
@@ -1587,7 +1826,7 @@ public:
 
 			OS::get_singleton()->execute(jarsigner, args, true, NULL, NULL, &retval);
 			if (retval) {
-				EditorNode::add_io_error("'jarsigner' verification of APK failed. Make sure to use jarsigner from Java 6.");
+				EditorNode::add_io_error("'jarsigner' verification of APK failed. Make sure to use a jarsigner from OpenJDK 8.");
 				return ERR_CANT_CREATE;
 			}
 		}
@@ -1596,7 +1835,7 @@ public:
 
 		static const int ZIP_ALIGNMENT = 4;
 
-		ep.step("Aligning APK..", 105);
+		ep.step("Aligning APK...", 105);
 
 		unzFile tmp_unaligned = unzOpen2(unaligned_path.utf8().get_data(), &io);
 		if (!tmp_unaligned) {
@@ -1635,7 +1874,7 @@ public:
 			int method, level;
 			unzOpenCurrentFile2(tmp_unaligned, &method, &level, 1); // raw read
 			long file_offset = unzGetCurrentFileZStreamPos64(tmp_unaligned);
-			unzReadCurrentFile(tmp_unaligned, data.ptr(), data.size());
+			unzReadCurrentFile(tmp_unaligned, data.ptrw(), data.size());
 			unzCloseCurrentFile(tmp_unaligned);
 
 			// align
@@ -1686,6 +1925,9 @@ public:
 		r_features->push_back("Android");
 	}
 
+	virtual void resolve_platform_feature_priorities(const Ref<EditorExportPreset> &p_preset, Set<String> &p_features) {
+	}
+
 	EditorExportAndroid() {
 
 		Ref<Image> img = memnew(Image(_android_logo));
@@ -1697,9 +1939,9 @@ public:
 		run_icon->create_from_image(img);
 
 		device_lock = Mutex::create();
-		device_thread = Thread::create(_device_poll_thread, this);
 		devices_changed = true;
 		quit_request = false;
+		device_thread = Thread::create(_device_poll_thread, this);
 	}
 
 	~EditorExportAndroid() {
@@ -1722,7 +1964,7 @@ void register_android_exporter() {
 	EDITOR_DEF("export/android/jarsigner", "");
 	EditorSettings::get_singleton()->add_property_hint(PropertyInfo(Variant::STRING, "export/android/jarsigner", PROPERTY_HINT_GLOBAL_FILE, exe_ext));
 	EDITOR_DEF("export/android/debug_keystore", "");
-	EditorSettings::get_singleton()->add_property_hint(PropertyInfo(Variant::STRING, "export/android/debug_keystore", PROPERTY_HINT_GLOBAL_FILE, "keystore"));
+	EditorSettings::get_singleton()->add_property_hint(PropertyInfo(Variant::STRING, "export/android/debug_keystore", PROPERTY_HINT_GLOBAL_FILE, "*.keystore"));
 	EDITOR_DEF("export/android/debug_keystore_user", "androiddebugkey");
 	EDITOR_DEF("export/android/debug_keystore_pass", "android");
 	EDITOR_DEF("export/android/force_system_user", false);

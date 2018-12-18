@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2017 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2017 Godot Engine contributors (cf. AUTHORS.md)    */
+/* Copyright (c) 2007-2018 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2018 Godot Engine contributors (cf. AUTHORS.md)    */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -27,10 +27,11 @@
 /* TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE     */
 /* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                */
 /*************************************************************************/
+
 #include "audio_driver_rtaudio.h"
 
-#include "os/os.h"
-#include "project_settings.h"
+#include "core/os/os.h"
+#include "core/project_settings.h"
 
 #ifdef RTAUDIO_ENABLED
 
@@ -87,7 +88,7 @@ Error AudioDriverRtAudio::init() {
 
 	// FIXME: Adapt to the OutputFormat -> SpeakerMode change
 	/*
-	String channels = GLOBAL_DEF("audio/output","stereo");
+	String channels = GLOBAL_DEF_RST("audio/output","stereo");
 
 	if (channels=="5.1")
 		output_format=OUTPUT_5_1;
@@ -107,20 +108,18 @@ Error AudioDriverRtAudio::init() {
 	options.numberOfBuffers = 4;
 
 	parameters.firstChannel = 0;
-	mix_rate = GLOBAL_DEF("audio/mix_rate", DEFAULT_MIX_RATE);
+	mix_rate = GLOBAL_DEF_RST("audio/mix_rate", DEFAULT_MIX_RATE);
 
 	int latency = GLOBAL_DEF("audio/output_latency", DEFAULT_OUTPUT_LATENCY);
 	unsigned int buffer_frames = closest_power_of_2(latency * mix_rate / 1000);
+	print_verbose("Audio buffer frames: " + itos(buffer_frames) + " calculated latency: " + itos(buffer_frames * 1000 / mix_rate) + "ms");
 
-	if (OS::get_singleton()->is_stdout_verbose()) {
-		print_line("audio buffer frames: " + itos(buffer_frames) + " calculated latency: " + itos(buffer_frames * 1000 / mix_rate) + "ms");
-	}
+	short int tries = 4;
 
-	short int tries = 2;
-
-	while (tries >= 0) {
+	while (tries > 0) {
 		switch (speaker_mode) {
 			case SPEAKER_MODE_STEREO: parameters.nChannels = 2; break;
+			case SPEAKER_SURROUND_31: parameters.nChannels = 4; break;
 			case SPEAKER_SURROUND_51: parameters.nChannels = 6; break;
 			case SPEAKER_SURROUND_71: parameters.nChannels = 8; break;
 		};
@@ -130,12 +129,14 @@ Error AudioDriverRtAudio::init() {
 			active = true;
 
 			break;
-		} catch (RtAudioError &e) {
+		} catch (RtAudioError) {
 			// try with less channels
-			ERR_PRINT("Unable to open audio, retrying with fewer channels..");
+			ERR_PRINT("Unable to open audio, retrying with fewer channels...");
 
 			switch (speaker_mode) {
-				case SPEAKER_SURROUND_51: speaker_mode = SPEAKER_MODE_STEREO; break;
+				case SPEAKER_MODE_STEREO: break; // Required to silence unhandled enum value warning.
+				case SPEAKER_SURROUND_31: speaker_mode = SPEAKER_MODE_STEREO; break;
+				case SPEAKER_SURROUND_51: speaker_mode = SPEAKER_SURROUND_31; break;
 				case SPEAKER_SURROUND_71: speaker_mode = SPEAKER_SURROUND_51; break;
 			}
 
@@ -193,13 +194,12 @@ void AudioDriverRtAudio::finish() {
 	}
 }
 
-AudioDriverRtAudio::AudioDriverRtAudio() {
-
-	active = false;
-	mutex = NULL;
-	dac = NULL;
-	mix_rate = DEFAULT_MIX_RATE;
-	speaker_mode = SPEAKER_MODE_STEREO;
+AudioDriverRtAudio::AudioDriverRtAudio() :
+		speaker_mode(SPEAKER_MODE_STEREO),
+		mutex(NULL),
+		dac(NULL),
+		mix_rate(DEFAULT_MIX_RATE),
+		active(false) {
 }
 
 #endif

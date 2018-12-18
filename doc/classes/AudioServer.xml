@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8" ?>
-<class name="AudioServer" inherits="Object" category="Core" version="3.0-alpha">
+<class name="AudioServer" inherits="Object" category="Core" version="3.1">
 	<brief_description>
 		Server interface for low level audio access.
 	</brief_description>
@@ -7,6 +7,7 @@
 		AudioServer is a low level server interface for audio access. It is in charge of creating sample data (playable audio) as well as its playback via a voice interface.
 	</description>
 	<tutorials>
+		<link>https://docs.godotengine.org/en/latest/tutorials/audio/audio_buses.html</link>
 	</tutorials>
 	<demos>
 	</demos>
@@ -33,11 +34,40 @@
 				Adds an [AudioEffect] effect to the bus [code]bus_idx[/code] at [code]at_position[/code].
 			</description>
 		</method>
+		<method name="capture_get_device">
+			<return type="String">
+			</return>
+			<description>
+			</description>
+		</method>
+		<method name="capture_get_device_list">
+			<return type="Array">
+			</return>
+			<description>
+			</description>
+		</method>
+		<method name="capture_set_device">
+			<return type="void">
+			</return>
+			<argument index="0" name="name" type="String">
+			</argument>
+			<description>
+			</description>
+		</method>
 		<method name="generate_bus_layout" qualifiers="const">
 			<return type="AudioBusLayout">
 			</return>
 			<description>
 				Generates an [AudioBusLayout] using the available busses and effects.
+			</description>
+		</method>
+		<method name="get_bus_channels" qualifiers="const">
+			<return type="int">
+			</return>
+			<argument index="0" name="bus_idx" type="int">
+			</argument>
+			<description>
+				Returns the amount of channels of the bus at index [code]bus_idx[/code].
 			</description>
 		</method>
 		<method name="get_bus_count" qualifiers="const">
@@ -123,6 +153,18 @@
 			</argument>
 			<description>
 				Returns the volume of the bus at index [code]bus_idx[/code] in dB.
+			</description>
+		</method>
+		<method name="get_device">
+			<return type="String">
+			</return>
+			<description>
+			</description>
+		</method>
+		<method name="get_device_list">
+			<return type="Array">
+			</return>
+			<description>
 			</description>
 		</method>
 		<method name="get_mix_rate" qualifiers="const">
@@ -287,7 +329,7 @@
 			<argument index="1" name="send" type="String">
 			</argument>
 			<description>
-				Connects the output of the bus at [code]bus_idx[/code] to the bus named [code]send[/send].
+				Connects the output of the bus at [code]bus_idx[/code] to the bus named [code]send[/code].
 			</description>
 		</method>
 		<method name="set_bus_solo">
@@ -310,6 +352,14 @@
 			</argument>
 			<description>
 				Sets the volume of the bus at index [code]bus_idx[/code] to [code]volume_db[/code].
+			</description>
+		</method>
+		<method name="set_device">
+			<return type="void">
+			</return>
+			<argument index="0" name="device" type="String">
+			</argument>
+			<description>
 			</description>
 		</method>
 		<method name="swap_bus_effects">
@@ -341,13 +391,15 @@
 		</signal>
 	</signals>
 	<constants>
-		<constant name="SPEAKER_MODE_STEREO" value="0">
+		<constant name="SPEAKER_MODE_STEREO" value="0" enum="SpeakerMode">
 			Two or fewer speakers are detected.
 		</constant>
-		<constant name="SPEAKER_SURROUND_51" value="2">
+		<constant name="SPEAKER_SURROUND_31" value="1" enum="SpeakerMode">
+		</constant>
+		<constant name="SPEAKER_SURROUND_51" value="2" enum="SpeakerMode">
 			A 5.1 channel surround setup detected.
 		</constant>
-		<constant name="SPEAKER_SURROUND_71" value="3">
+		<constant name="SPEAKER_SURROUND_71" value="3" enum="SpeakerMode">
 			A 7.1 channel surround setup detected.
 		</constant>
 	</constants>

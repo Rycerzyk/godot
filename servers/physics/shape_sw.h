@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2017 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2017 Godot Engine contributors (cf. AUTHORS.md)    */
+/* Copyright (c) 2007-2018 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2018 Godot Engine contributors (cf. AUTHORS.md)    */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -27,11 +27,12 @@
 /* TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE     */
 /* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                */
 /*************************************************************************/
+
 #ifndef SHAPE_SW_H
 #define SHAPE_SW_H
 
-#include "bsp_tree.h"
-#include "geometry.h"
+#include "core/math/bsp_tree.h"
+#include "core/math/geometry.h"
 #include "servers/physics_server.h"
 /*
 
@@ -58,14 +59,14 @@ public:
 class ShapeSW : public RID_Data {
 
 	RID self;
-	Rect3 aabb;
+	AABB aabb;
 	bool configured;
 	real_t custom_bias;
 
 	Map<ShapeOwnerSW *, int> owners;
 
 protected:
-	void configure(const Rect3 &p_aabb);
+	void configure(const AABB &p_aabb);
 
 public:
 	enum {
@@ -79,7 +80,7 @@ public:
 
 	virtual PhysicsServer::ShapeType get_type() const = 0;
 
-	_FORCE_INLINE_ Rect3 get_aabb() const { return aabb; }
+	_FORCE_INLINE_ AABB get_aabb() const { return aabb; }
 	_FORCE_INLINE_ bool is_configured() const { return configured; }
 
 	virtual bool is_concave() const { return false; }
@@ -114,7 +115,7 @@ public:
 	typedef void (*Callback)(void *p_userdata, ShapeSW *p_convex);
 	virtual void get_supports(const Vector3 &p_normal, int p_max, Vector3 *r_supports, int &r_amount) const { r_amount = 0; }
 
-	virtual void cull(const Rect3 &p_local_aabb, Callback p_callback, void *p_userdata) const = 0;
+	virtual void cull(const AABB &p_local_aabb, Callback p_callback, void *p_userdata) const = 0;
 
 	ConcaveShapeSW() {}
 };
@@ -148,11 +149,13 @@ public:
 class RayShapeSW : public ShapeSW {
 
 	real_t length;
+	bool slips_on_slope;
 
-	void _setup(real_t p_length);
+	void _setup(real_t p_length, bool p_slips_on_slope);
 
 public:
 	real_t get_length() const;
+	bool get_slips_on_slope() const;
 
 	virtual real_t get_area() const { return 0.0; }
 	virtual PhysicsServer::ShapeType get_type() const { return PhysicsServer::SHAPE_RAY; }
@@ -237,7 +240,7 @@ public:
 	_FORCE_INLINE_ real_t get_height() const { return height; }
 	_FORCE_INLINE_ real_t get_radius() const { return radius; }
 
-	virtual real_t get_area() { return 4.0 / 3.0 * Math_PI * radius * radius * radius + height * Math_PI * radius * radius; }
+	virtual real_t get_area() const { return 4.0 / 3.0 * Math_PI * radius * radius * radius + height * Math_PI * radius * radius; }
 
 	virtual PhysicsServer::ShapeType get_type() const { return PhysicsServer::SHAPE_CAPSULE; }
 
@@ -299,7 +302,7 @@ struct ConcavePolygonShapeSW : public ConcaveShapeSW {
 
 	struct BVH {
 
-		Rect3 aabb;
+		AABB aabb;
 		int left;
 		int right;
 
@@ -310,7 +313,7 @@ struct ConcavePolygonShapeSW : public ConcaveShapeSW {
 
 	struct _CullParams {
 
-		Rect3 aabb;
+		AABB aabb;
 		Callback callback;
 		void *userdata;
 		const Face *faces;
@@ -353,7 +356,7 @@ public:
 	virtual bool intersect_point(const Vector3 &p_point) const;
 	virtual Vector3 get_closest_point_to(const Vector3 &p_point) const;
 
-	virtual void cull(const Rect3 &p_local_aabb, Callback p_callback, void *p_userdata) const;
+	virtual void cull(const AABB &p_local_aabb, Callback p_callback, void *p_userdata) const;
 
 	virtual Vector3 get_moment_of_inertia(real_t p_mass) const;
 
@@ -389,7 +392,7 @@ public:
 	virtual bool intersect_point(const Vector3 &p_point) const;
 
 	virtual Vector3 get_closest_point_to(const Vector3 &p_point) const;
-	virtual void cull(const Rect3 &p_local_aabb, Callback p_callback, void *p_userdata) const;
+	virtual void cull(const AABB &p_local_aabb, Callback p_callback, void *p_userdata) const;
 
 	virtual Vector3 get_moment_of_inertia(real_t p_mass) const;
 
@@ -462,7 +465,7 @@ struct MotionShapeSW : public ShapeSW {
 	virtual void set_data(const Variant &p_data) {}
 	virtual Variant get_data() const { return Variant(); }
 
-	MotionShapeSW() { configure(Rect3()); }
+	MotionShapeSW() { configure(AABB()); }
 };
 
 struct _ShapeTestConvexBSPSW {

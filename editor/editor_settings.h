@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2017 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2017 Godot Engine contributors (cf. AUTHORS.md)    */
+/* Copyright (c) 2007-2018 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2018 Godot Engine contributors (cf. AUTHORS.md)    */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -27,16 +27,17 @@
 /* TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE     */
 /* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                */
 /*************************************************************************/
+
 #ifndef EDITOR_SETTINGS_H
 #define EDITOR_SETTINGS_H
 
-#include "object.h"
+#include "core/object.h"
 
 #include "core/io/config_file.h"
-#include "os/thread_safe.h"
-#include "resource.h"
+#include "core/os/thread_safe.h"
+#include "core/resource.h"
+#include "core/translation.h"
 #include "scene/gui/shortcut.h"
-#include "translation.h"
 
 class EditorPlugin;
 
@@ -66,19 +67,27 @@ private:
 		int order;
 		Variant variant;
 		Variant initial;
-		bool initial_set;
+		bool has_default_value;
 		bool hide_from_editor;
 		bool save;
-		VariantContainer() {
-			order = 0;
-			hide_from_editor = false;
-			initial_set = false;
-			save = false;
+		bool restart_if_changed;
+		VariantContainer() :
+				order(0),
+				variant(Variant()),
+				initial(Variant()),
+				has_default_value(false),
+				hide_from_editor(false),
+				save(false),
+				restart_if_changed(false) {
 		}
-		VariantContainer(const Variant &p_variant, int p_order) {
-			variant = p_variant;
-			order = p_order;
-			hide_from_editor = false;
+		VariantContainer(const Variant &p_variant, int p_order) :
+				order(p_order),
+				variant(p_variant),
+				initial(Variant()),
+				has_default_value(false),
+				hide_from_editor(false),
+				save(false),
+				restart_if_changed(false) {
 		}
 	};
 
@@ -89,21 +98,23 @@ private:
 	int last_order;
 
 	Ref<Resource> clipboard;
-	Vector<Ref<Translation> > translations;
 	Map<String, Ref<ShortCut> > shortcuts;
 
 	String resource_path;
+	String settings_dir;
+	String data_dir;
+	String cache_dir;
 	String config_file_path;
-	String settings_path;
-	String project_config_path;
+	String project_config_dir;
 
-	Vector<String> favorite_dirs;
+	Vector<String> favorites;
 	Vector<String> recent_dirs;
 
 	bool save_changed_setting;
 	bool optimize_save; //do not save stuff that came from config but was not set from engine
 
-	bool _set(const StringName &p_name, const Variant &p_value, bool p_emit_signal = true);
+	bool _set(const StringName &p_name, const Variant &p_value);
+	bool _set_only(const StringName &p_name, const Variant &p_value);
 	bool _get(const StringName &p_name, Variant &r_ret) const;
 	void _initial_set(const StringName &p_name, const Variant &p_value);
 	void _get_property_list(List<PropertyInfo> *p_list) const;
@@ -136,9 +147,13 @@ public:
 	bool has_setting(const String &p_setting) const;
 	void erase(const String &p_setting);
 	void raise_order(const String &p_setting);
-	void set_initial_value(const StringName &p_setting, const Variant &p_value);
+	void set_initial_value(const StringName &p_setting, const Variant &p_value, bool p_update_current = false);
+	void set_restart_if_changed(const StringName &p_setting, bool p_restart);
 	void set_manually(const StringName &p_setting, const Variant &p_value, bool p_emit_signal = false) {
-		_set(p_setting, p_value, p_emit_signal);
+		if (p_emit_signal)
+			_set(p_setting, p_value);
+		else
+			_set_only(p_setting, p_value);
 	}
 	bool property_can_revert(const String &p_setting);
 	Variant property_get_revert(const String &p_setting);
@@ -147,17 +162,24 @@ public:
 	void set_resource_clipboard(const Ref<Resource> &p_resource) { clipboard = p_resource; }
 	Ref<Resource> get_resource_clipboard() const { return clipboard; }
 
-	String get_settings_path() const;
-	String get_project_settings_path() const;
+	String get_data_dir() const;
+	String get_templates_dir() const;
+	String get_settings_dir() const;
+	String get_project_settings_dir() const;
+	String get_text_editor_themes_dir() const;
+	String get_script_templates_dir() const;
+	String get_cache_dir() const;
 
 	void set_project_metadata(const String &p_section, const String &p_key, Variant p_data);
-	Variant get_project_metadata(const String &p_section, const String &p_key, Variant p_default);
+	Variant get_project_metadata(const String &p_section, const String &p_key, Variant p_default) const;
 
-	void set_favorite_dirs(const Vector<String> &p_favorites_dirs);
-	Vector<String> get_favorite_dirs() const;
+	void set_favorites(const Vector<String> &p_favorites);
+	Vector<String> get_favorites() const;
 	void set_recent_dirs(const Vector<String> &p_recent_dirs);
 	Vector<String> get_recent_dirs() const;
 	void load_favorites();
+
+	bool is_dark_theme();
 
 	void list_text_editor_themes();
 	void load_text_editor_theme();
@@ -166,6 +188,7 @@ public:
 	bool save_text_editor_theme_as(String p_file);
 
 	Vector<String> get_script_templates(const String &p_extension);
+	String get_editor_layouts_config() const;
 
 	void add_shortcut(const String &p_name, Ref<ShortCut> &p_shortcut);
 	bool is_shortcut(const String &p_name, const Ref<InputEvent> &p_event) const;
@@ -181,7 +204,8 @@ public:
 //not a macro any longer
 
 #define EDITOR_DEF(m_var, m_val) _EDITOR_DEF(m_var, Variant(m_val))
-Variant _EDITOR_DEF(const String &p_setting, const Variant &p_default);
+#define EDITOR_DEF_RST(m_var, m_val) _EDITOR_DEF(m_var, Variant(m_val), true)
+Variant _EDITOR_DEF(const String &p_setting, const Variant &p_default, bool p_restart_if_changed = false);
 
 #define EDITOR_GET(m_var) _EDITOR_GET(m_var)
 Variant _EDITOR_GET(const String &p_setting);

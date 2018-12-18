@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2017 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2017 Godot Engine contributors (cf. AUTHORS.md)    */
+/* Copyright (c) 2007-2018 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2018 Godot Engine contributors (cf. AUTHORS.md)    */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -27,6 +27,7 @@
 /* TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE     */
 /* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                */
 /*************************************************************************/
+
 #ifndef NODE2D_H
 #define NODE2D_H
 
@@ -39,7 +40,7 @@ class Node2D : public CanvasItem {
 	Point2 pos;
 	float angle;
 	Size2 _scale;
-	int z;
+	int z_index;
 	bool z_relative;
 
 	Transform2D _mat;
@@ -51,18 +52,23 @@ class Node2D : public CanvasItem {
 	void _update_xform_values();
 
 protected:
-	void _notification(int p_what);
-
 	static void _bind_methods();
 
 public:
-	virtual Variant edit_get_state() const;
-	virtual void edit_set_state(const Variant &p_state);
-	virtual void edit_set_rect(const Rect2 &p_edit_rect);
-	virtual void edit_rotate(float p_rot);
-	virtual void edit_set_pivot(const Point2 &p_pivot);
-	virtual Point2 edit_get_pivot() const;
-	virtual bool edit_has_pivot() const;
+	virtual Dictionary _edit_get_state() const;
+	virtual void _edit_set_state(const Dictionary &p_state);
+
+	virtual void _edit_set_position(const Point2 &p_position);
+	virtual Point2 _edit_get_position() const;
+
+	virtual void _edit_set_scale(const Size2 &p_scale);
+	virtual Size2 _edit_get_scale() const;
+
+	virtual void _edit_set_rotation(float p_rotation);
+	virtual float _edit_get_rotation() const;
+	virtual bool _edit_use_rotation() const;
+
+	virtual void _edit_set_rect(const Rect2 &p_edit_rect);
 
 	void set_position(const Point2 &p_pos);
 	void set_rotation(float p_radians);
@@ -85,7 +91,6 @@ public:
 	float get_global_rotation() const;
 	float get_global_rotation_degrees() const;
 	Size2 get_global_scale() const;
-	virtual Rect2 get_item_rect() const;
 
 	void set_transform(const Transform2D &p_transform);
 	void set_global_transform(const Transform2D &p_transform);
@@ -94,8 +99,8 @@ public:
 	void set_global_rotation_degrees(float p_degrees);
 	void set_global_scale(const Size2 &p_scale);
 
-	void set_z(int p_z);
-	int get_z() const;
+	void set_z_index(int p_z);
+	int get_z_index() const;
 
 	void look_at(const Vector2 &p_pos);
 	float get_angle_to(const Vector2 &p_pos) const;

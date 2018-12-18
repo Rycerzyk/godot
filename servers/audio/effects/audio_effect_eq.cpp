@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2017 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2017 Godot Engine contributors (cf. AUTHORS.md)    */
+/* Copyright (c) 2007-2018 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2018 Godot Engine contributors (cf. AUTHORS.md)    */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -27,15 +27,16 @@
 /* TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE     */
 /* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                */
 /*************************************************************************/
+
 #include "audio_effect_eq.h"
 #include "servers/audio_server.h"
 
 void AudioEffectEQInstance::process(const AudioFrame *p_src_frames, AudioFrame *p_dst_frames, int p_frame_count) {
 
 	int band_count = bands[0].size();
-	EQ::BandProcess *proc_l = bands[0].ptr();
-	EQ::BandProcess *proc_r = bands[1].ptr();
-	float *bgain = gains.ptr();
+	EQ::BandProcess *proc_l = bands[0].ptrw();
+	EQ::BandProcess *proc_r = bands[1].ptrw();
+	float *bgain = gains.ptrw();
 	for (int i = 0; i < band_count; i++) {
 		bgain[i] = Math::db2linear(base->gain[i]);
 	}
@@ -69,7 +70,7 @@ Ref<AudioEffectInstance> AudioEffectEQ::instance() {
 	for (int i = 0; i < 2; i++) {
 		ins->bands[i].resize(eq.get_band_count());
 		for (int j = 0; j < ins->bands[i].size(); j++) {
-			ins->bands[i][j] = eq.get_band_processor(j);
+			ins->bands[i].write[j] = eq.get_band_processor(j);
 		}
 	}
 
@@ -78,7 +79,7 @@ Ref<AudioEffectInstance> AudioEffectEQ::instance() {
 
 void AudioEffectEQ::set_band_gain_db(int p_band, float p_volume) {
 	ERR_FAIL_INDEX(p_band, gain.size());
-	gain[p_band] = p_volume;
+	gain.write[p_band] = p_volume;
 }
 
 float AudioEffectEQ::get_band_gain_db(int p_band) const {
@@ -133,7 +134,7 @@ AudioEffectEQ::AudioEffectEQ(EQ::Preset p_preset) {
 	eq.set_preset_band_mode(p_preset);
 	gain.resize(eq.get_band_count());
 	for (int i = 0; i < gain.size(); i++) {
-		gain[i] = 0.0;
+		gain.write[i] = 0.0;
 		String name = "band_db/" + itos(eq.get_band_frequency(i)) + "_hz";
 		prop_band_map[name] = i;
 		band_names.push_back(name);

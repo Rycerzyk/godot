@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2017 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2017 Godot Engine contributors (cf. AUTHORS.md)    */
+/* Copyright (c) 2007-2018 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2018 Godot Engine contributors (cf. AUTHORS.md)    */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -27,6 +27,7 @@
 /* TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE     */
 /* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                */
 /*************************************************************************/
+
 #ifndef ANIMATION_PLAYER_H
 #define ANIMATION_PLAYER_H
 
@@ -38,6 +39,24 @@
 	@author Juan Linietsky <reduzio@gmail.com>
 */
 
+#ifdef TOOLS_ENABLED
+// To save/restore animated values
+class AnimatedValuesBackup {
+	struct Entry {
+		Object *object;
+		Vector<StringName> subpath; // Unused if bone
+		int bone_idx; // -1 if not a bone
+		Variant value;
+	};
+	Vector<Entry> entries;
+
+	friend class AnimationPlayer;
+
+public:
+	void update_skeletons();
+};
+#endif
+
 class AnimationPlayer : public Node {
 	GDCLASS(AnimationPlayer, Node);
 	OBJ_CATEGORY("Animation Nodes");
@@ -46,6 +65,7 @@ public:
 	enum AnimationProcessMode {
 		ANIMATION_PROCESS_PHYSICS,
 		ANIMATION_PROCESS_IDLE,
+		ANIMATION_PROCESS_MANUAL,
 	};
 
 private:
@@ -79,14 +99,21 @@ private:
 		Vector3 scale_accum;
 		uint64_t accum_pass;
 
+		bool audio_playing;
+		float audio_start;
+		float audio_len;
+
+		bool animation_playing;
+
 		struct PropertyAnim {
 
 			TrackNodeCache *owner;
 			SpecialProperty special; //small optimization
-			StringName prop;
+			Vector<StringName> subpath;
 			Object *object;
 			Variant value_accum;
 			uint64_t accum_pass;
+			Variant capture;
 			PropertyAnim() {
 				accum_pass = 0;
 				object = NULL;
@@ -95,6 +122,22 @@ private:
 
 		Map<StringName, PropertyAnim> property_anim;
 
+		struct BezierAnim {
+
+			Vector<StringName> bezier_property;
+			TrackNodeCache *owner;
+			float bezier_accum;
+			Object *object;
+			uint64_t accum_pass;
+			BezierAnim() {
+				accum_pass = 0;
+				bezier_accum = 0;
+				object = NULL;
+			}
+		};
+
+		Map<StringName, BezierAnim> bezier_anim;
+
 		TrackNodeCache() {
 			skeleton = NULL;
 			spatial = NULL;
@@ -102,6 +145,8 @@ private:
 			accum_pass = 0;
 			bone_idx = -1;
 			node_2d = NULL;
+			audio_playing = false;
+			animation_playing = false;
 		}
 	};
 
@@ -127,6 +172,10 @@ private:
 	int cache_update_size;
 	TrackNodeCache::PropertyAnim *cache_update_prop[NODE_CACHE_UPDATE_MAX];
 	int cache_update_prop_size;
+	TrackNodeCache::BezierAnim *cache_update_bezier[NODE_CACHE_UPDATE_MAX];
+	int cache_update_bezier_size;
+	Set<TrackNodeCache *> playing_caches;
+
 	Map<Ref<Animation>, int> used_anims;
 
 	uint64_t accum_pass;
@@ -183,10 +232,13 @@ private:
 		List<Blend> blend;
 		PlaybackData current;
 		StringName assigned;
+		bool seeked;
+		bool started;
 	} playback;
 
 	List<StringName> queued;
 
+	bool end_reached;
 	bool end_notify;
 
 	String autoplay;
@@ -196,15 +248,16 @@ private:
 
 	NodePath root;
 
-	void _animation_process_animation(AnimationData *p_anim, float p_time, float p_delta, float p_interp, bool p_allow_discrete = true);
+	void _animation_process_animation(AnimationData *p_anim, float p_time, float p_delta, float p_interp, bool p_is_current = true, bool p_seeked = false, bool p_started = false);
 
-	void _generate_node_caches(AnimationData *p_anim);
-	void _animation_process_data(PlaybackData &cd, float p_delta, float p_blend);
-	void _animation_process2(float p_delta);
+	void _ensure_node_caches(AnimationData *p_anim);
+	void _animation_process_data(PlaybackData &cd, float p_delta, float p_blend, bool p_seeked, bool p_started);
+	void _animation_process2(float p_delta, bool p_started);
 	void _animation_update_transforms();
 	void _animation_process(float p_delta);
 
 	void _node_removed(Node *p_node);
+	void _stop_playing_caches();
 
 	// bind helpers
 	PoolVector<String> _get_animation_list() const {
@@ -231,6 +284,7 @@ private:
 protected:
 	bool _set(const StringName &p_name, const Variant &p_value);
 	bool _get(const StringName &p_name, Variant &r_ret) const;
+	virtual void _validate_property(PropertyInfo &property) const;
 	void _get_property_list(List<PropertyInfo> *p_list) const;
 	void _notification(int p_what);
 
@@ -258,11 +312,14 @@ public:
 	void play(const StringName &p_name = StringName(), float p_custom_blend = -1, float p_custom_scale = 1.0, bool p_from_end = false);
 	void play_backwards(const StringName &p_name = StringName(), float p_custom_blend = -1);
 	void queue(const StringName &p_name);
+	PoolVector<String> get_queue();
 	void clear_queue();
 	void stop(bool p_reset = true);
 	bool is_playing() const;
 	String get_current_animation() const;
 	void set_current_animation(const String &p_anim);
+	String get_assigned_animation() const;
+	void set_assigned_animation(const String &p_anim);
 	void stop_all();
 	void set_active(bool p_active);
 	bool is_active() const;
@@ -270,6 +327,7 @@ public:
 
 	void set_speed_scale(float p_speed);
 	float get_speed_scale() const;
+	float get_playing_speed() const;
 
 	void set_autoplay(const String &p_name);
 	String get_autoplay() const;
@@ -290,6 +348,12 @@ public:
 	void clear_caches(); ///< must be called by hand if an animation was modified after added
 
 	void get_argument_options(const StringName &p_function, int p_idx, List<String> *r_options) const;
+
+#ifdef TOOLS_ENABLED
+	// These may be interesting for games, but are too dangerous for general use
+	AnimatedValuesBackup backup_animated_values();
+	void restore_animated_values(const AnimatedValuesBackup &p_backup);
+#endif
 
 	AnimationPlayer();
 	~AnimationPlayer();

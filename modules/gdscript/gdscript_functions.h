@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2017 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2017 Godot Engine contributors (cf. AUTHORS.md)    */
+/* Copyright (c) 2007-2018 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2018 Godot Engine contributors (cf. AUTHORS.md)    */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -27,10 +27,11 @@
 /* TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE     */
 /* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                */
 /*************************************************************************/
+
 #ifndef GDSCRIPT_FUNCTIONS_H
 #define GDSCRIPT_FUNCTIONS_H
 
-#include "variant.h"
+#include "core/variant.h"
 
 class GDScriptFunctions {
 public:
@@ -75,6 +76,8 @@ public:
 		MATH_RAD2DEG,
 		MATH_LINEAR2DB,
 		MATH_DB2LINEAR,
+		MATH_POLAR2CARTESIAN,
+		MATH_CARTESIAN2POLAR,
 		MATH_WRAP,
 		MATH_WRAPF,
 		LOGIC_MAX,
@@ -93,6 +96,9 @@ public:
 		TEXT_PRINT_SPACED,
 		TEXT_PRINTERR,
 		TEXT_PRINTRAW,
+		TEXT_PRINT_DEBUG,
+		PUSH_ERROR,
+		PUSH_WARNING,
 		VAR_TO_STR,
 		STR_TO_VAR,
 		VAR_TO_BYTES,
@@ -108,10 +114,11 @@ public:
 		COLOR8,
 		COLORN,
 		PRINT_STACK,
+		GET_STACK,
 		INSTANCE_FROM_ID,
 		LEN,
+		IS_INSTANCE_VALID,
 		FUNC_MAX
-
 	};
 
 	static const char *get_func_name(Function p_func);

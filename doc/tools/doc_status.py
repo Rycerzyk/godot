@@ -229,11 +229,11 @@ class ClassStatus:
         output['overall'] = (description_progress + items_progress).to_colored_string('{percent}%', '{pad_percent}{s}')
 
         if self.name.startswith('Total'):
-            output['url'] = color('url', 'http://docs.godotengine.org/en/latest/classes/')
+            output['url'] = color('url', 'https://docs.godotengine.org/en/latest/classes/')
             if flags['s']:
                 output['comment'] = color('part_good', 'ALL OK')
         else:
-            output['url'] = color('url', 'http://docs.godotengine.org/en/latest/classes/class_{name}.html'.format(name=self.name.lower()))
+            output['url'] = color('url', 'https://docs.godotengine.org/en/latest/classes/class_{name}.html'.format(name=self.name.lower()))
 
             if flags['s'] and not flags['g'] and self.is_ok():
                 output['comment'] = color('part_good', 'ALL OK')
@@ -245,21 +245,6 @@ class ClassStatus:
         status = ClassStatus()
         status.name = c.attrib['name']
 
-        # setgets  do not count
-        methods = []
-        for tag in list(c):
-            if tag.tag in ['methods']:
-                for sub_tag in list(tag):
-                    methods.append(sub_tag.attrib['name'])
-            if tag.tag in ['members']:
-                for sub_tag in list(tag):
-                    try:
-                        if(sub_tag.attrib['setter'].startswith('_') == False):
-                            methods.remove(sub_tag.attrib['setter'])
-                        if(sub_tag.attrib['getter'].startswith('_') == False):
-                            methods.remove(sub_tag.attrib['getter'])
-                    except:
-                        pass
         for tag in list(c):
 
             if tag.tag == 'brief_description':
@@ -270,9 +255,8 @@ class ClassStatus:
 
             elif tag.tag in ['methods', 'signals']:
                 for sub_tag in list(tag):
-                    if sub_tag.attrib['name'] in methods or tag.tag == 'signals':
-                        descr = sub_tag.find('description')
-                        status.progresses[tag.tag].increment(len(descr.text.strip()) > 0)
+                    descr = sub_tag.find('description')
+                    status.progresses[tag.tag].increment(len(descr.text.strip()) > 0)
             elif tag.tag in ['constants', 'members']:
                 for sub_tag in list(tag):
                     status.progresses[tag.tag].increment(len(sub_tag.text.strip()) > 0)

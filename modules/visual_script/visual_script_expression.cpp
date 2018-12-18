@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2017 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2017 Godot Engine contributors (cf. AUTHORS.md)    */
+/* Copyright (c) 2007-2018 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2018 Godot Engine contributors (cf. AUTHORS.md)    */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -27,6 +27,7 @@
 /* TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE     */
 /* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                */
 /*************************************************************************/
+
 #include "visual_script_expression.h"
 
 bool VisualScriptExpression::_set(const StringName &p_name, const Variant &p_value) {
@@ -55,11 +56,11 @@ bool VisualScriptExpression::_set(const StringName &p_name, const Variant &p_val
 		int from = inputs.size();
 		inputs.resize(int(p_value));
 		for (int i = from; i < inputs.size(); i++) {
-			inputs[i].name = String::chr('a' + i);
+			inputs.write[i].name = String::chr('a' + i);
 			if (from == 0) {
-				inputs[i].type = output_type;
+				inputs.write[i].type = output_type;
 			} else {
-				inputs[i].type = inputs[from - 1].type;
+				inputs.write[i].type = inputs[from - 1].type;
 			}
 		}
 		expression_dirty = true;
@@ -77,10 +78,10 @@ bool VisualScriptExpression::_set(const StringName &p_name, const Variant &p_val
 
 		if (what == "type") {
 
-			inputs[idx].type = Variant::Type(int(p_value));
+			inputs.write[idx].type = Variant::Type(int(p_value));
 		} else if (what == "name") {
 
-			inputs[idx].name = p_value;
+			inputs.write[idx].name = p_value;
 		} else {
 			return false;
 		}
@@ -454,7 +455,7 @@ Error VisualScriptExpression::_get_token(Token &r_token) {
 					break;
 				}
 
-				if (cchar == '-' || (cchar >= '0' && cchar <= '9')) {
+				if (cchar >= '0' && cchar <= '9') {
 					//a number
 
 					String num;
@@ -464,11 +465,6 @@ Error VisualScriptExpression::_get_token(Token &r_token) {
 #define READING_EXP 3
 #define READING_DONE 4
 					int reading = READING_INT;
-
-					if (cchar == '-') {
-						num += '-';
-						cchar = GET_CHAR();
-					}
 
 					CharType c = cchar;
 					bool exp_sign = false;
@@ -1145,7 +1141,7 @@ VisualScriptExpression::ENode *VisualScriptExpression::_parse_expression() {
 				expr_pos++;
 				if (expr_pos == expression.size()) {
 					//can happen..
-					_set_error("Unexpected end of expression..");
+					_set_error("Unexpected end of expression...");
 					return NULL;
 				}
 			}
@@ -1157,15 +1153,15 @@ VisualScriptExpression::ENode *VisualScriptExpression::_parse_expression() {
 				op->op = expression[i].op;
 				op->nodes[0] = expression[i + 1].node;
 				op->nodes[1] = NULL;
-				expression[i].is_op = false;
-				expression[i].node = op;
+				expression.write[i].is_op = false;
+				expression.write[i].node = op;
 				expression.remove(i + 1);
 			}
 
 		} else {
 
 			if (next_op < 1 || next_op >= (expression.size() - 1)) {
-				_set_error("Parser bug..");
+				_set_error("Parser bug...");
 				ERR_FAIL_V(NULL);
 			}
 
@@ -1174,7 +1170,7 @@ VisualScriptExpression::ENode *VisualScriptExpression::_parse_expression() {
 
 			if (expression[next_op - 1].is_op) {
 
-				_set_error("Parser bug..");
+				_set_error("Parser bug...");
 				ERR_FAIL_V(NULL);
 			}
 
@@ -1192,7 +1188,7 @@ VisualScriptExpression::ENode *VisualScriptExpression::_parse_expression() {
 			op->nodes[1] = expression[next_op + 1].node; //next expression goes as right
 
 			//replace all 3 nodes by this operator and make it an expression
-			expression[next_op - 1].node = op;
+			expression.write[next_op - 1].node = op;
 			expression.remove(next_op);
 			expression.remove(next_op);
 		}
@@ -1374,11 +1370,11 @@ public:
 					bool ret = _execute(p_inputs, constructor->arguments[i], value, r_error_str, ce);
 					if (ret)
 						return true;
-					arr[i] = value;
-					argp[i] = &arr[i];
+					arr.write[i] = value;
+					argp.write[i] = &arr[i];
 				}
 
-				r_ret = Variant::construct(constructor->data_type, argp.ptr(), argp.size(), ce);
+				r_ret = Variant::construct(constructor->data_type, (const Variant **)argp.ptr(), argp.size(), ce);
 
 				if (ce.error != Variant::CallError::CALL_OK) {
 					r_error_str = "Invalid arguments to construct '" + Variant::get_type_name(constructor->data_type) + "'.";
@@ -1401,11 +1397,11 @@ public:
 					bool ret = _execute(p_inputs, bifunc->arguments[i], value, r_error_str, ce);
 					if (ret)
 						return true;
-					arr[i] = value;
-					argp[i] = &arr[i];
+					arr.write[i] = value;
+					argp.write[i] = &arr[i];
 				}
 
-				VisualScriptBuiltinFunc::exec_func(bifunc->func, argp.ptr(), &r_ret, ce, r_error_str);
+				VisualScriptBuiltinFunc::exec_func(bifunc->func, (const Variant **)argp.ptr(), &r_ret, ce, r_error_str);
 
 				if (ce.error != Variant::CallError::CALL_OK) {
 					r_error_str = "Builtin Call Failed. " + r_error_str;
@@ -1433,11 +1429,11 @@ public:
 					bool ret = _execute(p_inputs, call->arguments[i], value, r_error_str, ce);
 					if (ret)
 						return true;
-					arr[i] = value;
-					argp[i] = &arr[i];
+					arr.write[i] = value;
+					argp.write[i] = &arr[i];
 				}
 
-				r_ret = base.call(call->method, argp.ptr(), argp.size(), ce);
+				r_ret = base.call(call->method, (const Variant **)argp.ptr(), argp.size(), ce);
 
 				if (ce.error != Variant::CallError::CALL_OK) {
 					r_error_str = "On call to '" + String(call->method) + "':";
